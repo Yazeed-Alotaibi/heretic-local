@@ -1,7 +1,8 @@
 # Heretic local setup
 
 Private recovery repository for the Windows PC's GPU model, 65,536-token context,
-eight MCP tools, private Tailscale phone access, and video downloads.
+eight existing MCP tools, five local memory/knowledge tools, private Tailscale phone access,
+and video downloads.
 
 This is a source/configuration backup. It does not automatically synchronize the
 running installation. It contains no model weights, installed binaries, videos,
@@ -11,6 +12,9 @@ Image generation is not configured.
 ## Layout
 
 - `runtime/`: model/file-server launchers, MCP configuration, video tool and tests.
+- `gateway/`: single-process Python gateway, canonical local memory, document imports and tests.
+- `ui/`: vendored Svelte interface from upstream llama.cpp commit
+  `2459f68b5c0eb26261fd5a81682004b93cd645ba`, its license and local integration.
 - `agent-reach/`: custom reading backend, tests, Python dependency lock and MCP configuration.
 - `web-tools/` and `node-tools/`: pinned Node dependency manifests and lockfiles.
 - `tailscale-serve.json`: the existing private chat and file proxy routes.
@@ -54,14 +58,76 @@ SHA-256 digests. These large assets are not in Git.
    tailscale serve --bg --http=8080 --set-path=/files http://127.0.0.1:8082
    ```
 
-6. Run the installed `Open-Heretic.ps1`, or use the existing desktop **Heretic**
-   shortcut. It checks the model, context, all eight tools, and the file server.
+6. Build the interface with `npm ci` and `npm run build` inside `ui`, then run
+   `runtime/Install-Gateway.ps1` from the repository. It installs the frozen gateway
+   environment and static interface, preserving a rollback copy of the launchers.
+   Stop the identified old model before starting the new gateway; do not kill by port.
+7. Run the installed `Open-Heretic.ps1`, or use the existing desktop **Heretic**
+   shortcut. It checks the gateway, model, context, all thirteen tools, and file server.
    Existing user-login startup points to this same script with `-NoBrowser`.
 
 On a different PC, adjust the model, executable, MCP, and shortcut paths and
-tailnet hostname first. This snapshot is not an automatic installer.
+tailnet hostname first. The installer targets the existing saved installation on this PC.
+
+## Memory and knowledge
+
+All three HTTP services run on this PC. The phone continues using the same Tailscale
+URL on port 8080. The gateway serves the interface and memory controls on 8080, the
+GPU engine listens only on loopback 8081, and validated video files remain on 8082.
+Do not add a Tailscale Serve route for 8081.
+
+Use the Memory button or `#/memory` to manage records, projects and documents.
+`Remember: <exact fact>` saves that text explicitly; ordinary suggestions require
+review and Save. Corrections require the displayed revision. Forget removes a record,
+its derived checkpoints, retrieval data and active execution capabilities. Existing
+browser messages, source documents and manual exports are separate copies.
+
+Memory is on by default. Select a project before the first message; changing projects
+requires a new chat. A fresh chat with memory off uses no local recall. Turning recall
+off in an existing private conversation preserves external-request approval checks.
+The review dialog shows the exact tool arguments; each invocation gets its own approval.
+Proposals and pending approvals expire after 15 minutes. Execution capabilities expire
+after 30 minutes of inactivity. Restart invalidates all three. Successful save retry
+receipts last 24 hours; project bindings and privacy state persist.
+
+Personal data is stored under `C:\Users\PC\.heretic\data`, outside this repository and
+OneDrive. Facts/preferences are JSON; notes/checkpoints are Markdown. The search index
+is rebuildable SQLite FTS5. Manual file changes become active at startup or Reload files.
+Invalid changes produce a visible error and preserve the working retrieval snapshot.
+Manual export writes a local ZIP in that data directory's `exports` folder; it excludes
+session tokens, approvals, operational state and logs. Nothing automatically pushes
+personal memory to GitHub.
+
+Knowledge accepts UTF-8 text, Markdown and searchable PDFs. Limits: 25 MiB, 500 PDF
+pages, 60 seconds, 512 MiB PDF-worker memory and 5 million extracted characters.
+Arabic and English retrieval is lexical; OCR and cross-language semantic search are
+not included. Original documents and source/page references are retained. Current
+instructions override remembered preferences; injected context is bounded to 4,096
+tokens counted with the model tokenizer.
+
+The browser owns tool rounds. The gateway modifies requests and preserves model SSE
+bytes for reconnects. Browser-direct MCP, custom tools and remote media loads are
+disabled so external requests use the gateway's approval checks. Local Windows
+processes are trusted in this single-user setup.
+
+Gateway checks: `uv run --project gateway --frozen pytest gateway/tests -q`.
+UI checks: `npm run check` and `npm run test:unit -- --run tests/unit/heretic.spec.ts`
+inside `ui`. Startup checks: `powershell -File runtime/Test-SavedStartup.ps1`.
 
 ## Verification
+
+The three-server upgrade was installed and verified on 2026-10-04. Gateway, GPU
+model and file service report ready through both loopback and the unchanged
+Tailscale URL. The live model reports 65,536 context tokens; all thirteen tools
+are present. Port 8081 is loopback-only and is not forwarded by Tailscale Serve.
+Existing videos passed HEAD and partial-content delivery through `/files`.
+
+The memory/knowledge gateway, targeted UI tests, typecheck and production build
+passed. A real Chrome workflow covered save, correction, document import/read,
+export, GPU recall, conversation persistence across reload, exact external-tool
+approval/denial, and forgetting without page errors. Startup fixtures passed on
+Windows PowerShell 5.1 and PowerShell 7.6.5, and reopening reused the live process
+identities. Details and limitations are recorded in `IMPLEMENTATION.md`.
 
 The saved installation passed 23 media tests and backend tests, independent
 review, direct MP4 and YouTube downloads, a model/tool round trip, private file

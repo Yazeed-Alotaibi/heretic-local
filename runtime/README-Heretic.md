@@ -8,21 +8,89 @@ page after a server/tool change. Conversations remain in the browser's storage.
 
 ## Runtime
 
+The installed layout is `gateway/heretic_gateway`, `gateway/.venv`, and `ui/`.
+The gateway starts before the model and reports `model: loading` until the model
+is ready. The phone can open the page while loading. `/health`, `/props`, and
+`/slots` pass through to the model; `/api/heretic/health` reports gateway, model,
+memory, and file-service readiness. The memory and knowledge tools are
+`memory_search`, `memory_read`, `memory_propose`, `knowledge_search`, and
+`knowledge_read`, in addition to the existing eight tools.
+
+Build the UI in the repository before installation; Vite emits `ui/dist/`.
+From the repository root:
+
+```powershell
+& .\runtime\Install-Gateway.ps1
+```
+
+Override `-RepositoryRoot` and `-RuntimePath` for another explicitly selected
+installation. The installer copies launchers, Python package sources, and built
+UI files, then runs `uv sync --frozen --python 3.12 --link-mode copy` in the
+installed gateway directory. It backs up existing launchers and gateway/UI
+directories under a unique `saved-setup/gateway-*` directory. It leaves MCP
+configuration, model binaries, model weights, shortcuts, and personal data in
+place. It does not stop or start services. An existing legacy model on 8080 must
+be deliberately stopped before starting the new gateway; no launcher kills a
+process by its listening port. Listener checks target loopback and wildcard
+addresses, allowing the existing Tailscale Serve listener on its private IP.
+
+Open or reuse the installed runtime with `./Open-Heretic.ps1`. To stop only the
+processes created by this installation, run `./Stop-Heretic.ps1`; use
+`-ValidateOnly` to inspect ownership without stopping anything. Process records
+contain launcher and descendant PIDs, executable paths, UTC creation times,
+parent PIDs, and the gateway's actual listening PID. Windows virtual environments
+can launch a second Python process; reopening validates that child's listener.
+Every live record is
+validated before any process is stopped, and each identity is checked again at
+stop time. Descendants stop before their launcher; cleanup failures preserve the
+ownership records. A reused existing file server is excluded from owned records.
+Failed startup leaves logs and ownership records available for inspection.
+
+After stopping owned gateway/model processes, restore the original launchers:
+
+```powershell
+& .\Install-Gateway.ps1 -RuntimePath 'C:\path\to\runtime' -RollbackBackup 'C:\path\to\runtime\saved-setup\gateway-TIMESTAMP-ID'
+& .\Open-Heretic.ps1 -NoBrowser
+```
+
+The backup must belong to the selected runtime. Restored original launchers
+return the original model to 8080. Rollback preserves new memory, knowledge,
+browser conversations, and downloads; gateway/UI files remain available for
+inspection. The rollback command does not stop or start services itself.
+
+Verification uses isolated temporary processes and leaves existing services intact.
+It requires the gateway's synchronized Windows virtual environment:
+
+```powershell
+& C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\runtime\Test-SavedStartup.ps1
+```
+
+This passed on Windows PowerShell 5.1 and PowerShell 7.6.5: script syntax, loopback listener filtering
+that excludes Tailscale Serve, valid process ownership,
+PID reuse rejection, backup creation, package/UI copying, original-launcher
+rollback, and preservation of personal data and MCP configuration. The install
+fixture mocks `uv`. A real Windows venv HTTP fixture verifies its redirector
+child, actual listening PID, reopening ownership, a two-second health response,
+and cleanup of both initial and late-spawned descendants on an ephemeral loopback
+port. The real environment synchronization and complete live readiness also passed
+on this PC. `-Live` explicitly enables the startup mutex
+test and may start the saved runtime.
+
 - Model: Ternary-Bonsai-2-27B-Uncensored-Heretic-PQ2_0.gguf
 - GPU: RTX 5070 Ti; all requested model layers are offloaded.
 - Context: 65,536 tokens; one chat slot; Q8_0 key/value cache; flash attention.
 - Q8 cache reduces memory use compared with the original F16 cache. Its effect
   on answer quality has not been benchmarked.
 - Start after the previous instance is stopped: `./Start-Heretic.ps1`
-- Fallback after stopping the current instance:
-  `./Start-Heretic.ps1 -ContextSize 8192 -WithoutTools`
+- The model runs privately on 8081; the gateway serves the phone UI on 8080.
+  The private video file service remains on 8082.
 - Startup logs have unique UTC filenames. The launcher refuses to replace an
   existing local listener. `before-64k-process.json` records the previous command.
 - Heretic starts hidden when this Windows user signs in, using the current-user
   Startup folder's `Heretic.lnk`. It loads the same model, 64k context, and tools.
 - Double-click the desktop **Heretic** shortcut to start or reopen the chat.
   `Open-Heretic.ps1` reuses an existing instance and checks the model, context,
-  all eight tools, and file server. It never stops an existing chat.
+  all thirteen tools, gateway, memory, and file server. It never stops an existing chat.
 - Startup diagnostics: `startup-status.log` and the timestamped server logs.
 - A PC reboot was not performed for verification. The shortcut's actual Windows
   PowerShell command was tested against the running instance.

@@ -24,3 +24,10 @@ verified-*.json
 *.mp4
 *.zip
 *.lnk
+.heretic/
+data/
+ui/build/
+ui/.svelte-kit/
+ui/test-results/
+ui/playwright-report/
+*.processes.json

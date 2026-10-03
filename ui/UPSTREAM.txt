@@ -1,0 +1,4 @@
+ggml-org/llama.cpp
+commit 2459f68b5c0eb26261fd5a81682004b93cd645ba
+archive sha256 2A69DD351F6C3AEF8769DD4FEC760FE2739002D63E61C217AF34E7AA435543A2
+vendored tools/ui and LICENSE only; local Heretic integration patches retained in Git
