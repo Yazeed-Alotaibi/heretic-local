@@ -9,6 +9,29 @@ import media_tools
 import pytest
 
 
+@pytest.mark.parametrize("detail,code", [
+    ("ERROR: Unsupported URL: https://example.com/private?token=secret", "UNSUPPORTED_SITE"),
+    ("Requested format is not available", "UNSUPPORTED_FORMAT"),
+    ("getaddrinfo failed", "PC_DNS_FAILED"),
+    ("HTTP Error 403: Forbidden", "SITE_DENIED"),
+    ("connection timed out", "PC_CONNECTION_FAILED"),
+    ("unknown failure with secret_cookie", "DOWNLOAD_FAILED"),
+])
+def test_errors_are_specific_without_exposing_raw_details(tmp_path, detail, code):
+    log = tmp_path / "download.log"
+    log.write_text(detail)
+    message = media_tools.download_failure(log, 1)
+    assert message.startswith(code + ":")
+    assert "secret" not in message
+    assert "https://example.com" not in message
+
+
+def test_initial_dns_failure_identifies_pc_without_starting_download():
+    with patch.object(socket, "getaddrinfo", side_effect=socket.gaierror()), patch.object(subprocess, "Popen") as popen, pytest.raises(RuntimeError, match="PC_DNS_FAILED"):
+        media_tools.download_video("https://example.com/video.mp4")
+    popen.assert_not_called()
+
+
 @pytest.mark.parametrize("url", ["file:///C:/secret", "http://example.com/video.mp4",
                                  "https://user:pass@example.com/video.mp4", "https://example.com:8080/x",
                                  "https://example.com/\nheader"])
@@ -51,6 +74,15 @@ def test_proxy_rejects_private_destination_before_connecting():
     with patch.object(socket, "getaddrinfo", return_value=[(0, 0, 0, "", ("127.0.0.1", 443))]), patch.object(socket, "create_connection") as connect:
         handler.do_CONNECT()
     connect.assert_not_called()
+
+
+def test_proxy_handles_downstream_dns_failure_without_connecting():
+    handler = object.__new__(media_tools.PublicProxy)
+    handler.path = "example.com:443"
+    with patch.object(socket, "getaddrinfo", side_effect=socket.gaierror()), patch.object(socket, "create_connection") as connect:
+        handler.do_CONNECT()
+    connect.assert_not_called()
+    assert handler.close_connection
 
 
 def test_failed_download_cleans_only_its_own_directory(tmp_path):

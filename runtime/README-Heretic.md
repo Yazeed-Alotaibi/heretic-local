@@ -93,6 +93,11 @@ destinations for each HTTPS connection. Image generation remains disconnected.
 Website formats must use HTTPS; unsupported streaming-only formats return an
 error rather than invoking a separate network downloader.
 
+Download failures return distinct codes for unsupported sites/formats, PC DNS,
+PC connections, HTTPS verification, and site denial. These are evidence from the
+PC download, not proof of a country block or unstable DNS. The phone receives the
+saved file over Tailscale and does not need to reach the original website.
+
 Verified a direct MP4 download and a public YouTube download through the live
 MCP tool. Heretic selected the tool and returned the resulting clickable link.
 The private phone URL passed HTTP download and partial-playback checks. All 23

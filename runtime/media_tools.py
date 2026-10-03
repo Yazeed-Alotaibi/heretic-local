@@ -27,6 +27,25 @@ MCP = FastMCP("heretic-media")
 DOWNLOAD_LOCK = threading.Lock()
 
 
+def download_failure(log: Path, returncode: int) -> str:
+    """Classify locally without returning URLs, cookies or website text to the model."""
+    with log.open("rb") as source:
+        source.seek(max(0, log.stat().st_size - 8192))
+        detail = source.read(8192).decode("utf-8", errors="replace").lower()
+    categories = (
+        (("unsupported url", "no suitable extractor"), "UNSUPPORTED_SITE: This page is not supported by the installed downloader. A direct HTTPS MP4 link is needed."),
+        (("requested format is not available", "no video formats found"), "UNSUPPORTED_FORMAT: No compatible HTTPS MP4 format was available. This does not establish a DNS or country block."),
+        (("could not resolve", "name or service not known", "getaddrinfo failed", "name resolution"), "PC_DNS_FAILED: The PC could not resolve a required video host. Phone browser DNS cannot fix the PC download."),
+        (("http error 403", "http error 451", "http error 401", "sign in", "login required", "private video"), "SITE_DENIED: The website denied the PC request or requires login. The tool cannot determine whether this is an account, bot or regional restriction."),
+        (("certificate", "ssl verification"), "TLS_FAILED: The PC could not verify the site's HTTPS connection. Certificate validation remains enabled."),
+        (("timed out", "timeout", "connection refused", "connection reset", "remote end closed", "failed to connect"), "PC_CONNECTION_FAILED: The PC could not complete the website connection. This alone does not prove a country block or unstable DNS."),
+    )
+    for indicators, message in categories:
+        if any(indicator in detail for indicator in indicators):
+            return message
+    return f"DOWNLOAD_FAILED: Downloader exited with code {returncode}. The cause is not established; do not invent DNS, phone settings or VPN instructions."
+
+
 class PublicProxy(BaseHTTPRequestHandler):
     """HTTPS-only downloader proxy that checks and pins every connection."""
 
@@ -50,7 +69,7 @@ class PublicProxy(BaseHTTPRequestHandler):
                     destination.settimeout(10)
                     destination.sendall(data)
                     destination.setblocking(False)
-        except (OSError, ValueError):
+        except (OSError, ValueError, RuntimeError):
             return
         finally:
             if upstream is not None:
@@ -68,7 +87,10 @@ def resolve_public(url: str) -> tuple[str, str]:
             or parsed.username is not None or parsed.password is not None
             or parsed.port not in {None, 443}):
         raise ValueError("Use a public HTTPS video URL without embedded credentials.")
-    addresses = socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM)
+    try:
+        addresses = socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM)
+    except socket.gaierror as error:
+        raise RuntimeError("PC_DNS_FAILED: The PC could not resolve the video host. No file was created. Phone browser DNS cannot fix this PC download.") from error
     if not addresses or any(not ipaddress.ip_address(item[4][0]).is_global for item in addresses):
         raise ValueError("Private, loopback and reserved destinations are not supported.")
     address = addresses[0][4][0]
@@ -105,7 +127,8 @@ def run_download(command: list[str], job: Path, deadline: float) -> None:
                     raise RuntimeError("Download exceeded its five-minute or 500 MB limit.")
                 time.sleep(0.25)
             if process.returncode:
-                raise RuntimeError("The website download failed. It may require login or block downloads.")
+                log.flush()
+                raise RuntimeError(download_failure(job / "download.log", process.returncode))
 
 
 def download_direct(url: str, job: Path, deadline: float) -> None:
@@ -163,6 +186,10 @@ def download_video(url: str) -> dict:
 
     Supports public sites handled by yt-dlp and direct HTTPS MP4 URLs. No playlists, live streams,
     browser cookies or login. Takes up to five minutes. Give the returned markdown link to the user.
+    Downloads run on the PC, not the phone. Always call this tool before reporting a download
+    result. The returned Tailscale link delivers the saved file without the phone accessing the
+    source website. Report the actual error code on failure. Do not claim country blocking,
+    unstable DNS, or advise phone DNS/VPN changes unless independently established.
     """
     resolve_public(url)
     if not DOWNLOAD_LOCK.acquire(blocking=False):
