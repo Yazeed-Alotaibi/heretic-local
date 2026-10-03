@@ -1,0 +1,19 @@
+{
+  "TCP": {
+    "8080": {
+      "HTTP": true
+    }
+  },
+  "Web": {
+    "desktop-7ov7vat.tail4c4266.ts.net:8080": {
+      "Handlers": {
+        "/": {
+          "Proxy": "http://127.0.0.1:8080"
+        },
+        "/files": {
+          "Proxy": "http://127.0.0.1:8082"
+        }
+      }
+    }
+  }
+}

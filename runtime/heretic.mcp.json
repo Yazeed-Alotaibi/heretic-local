@@ -1,0 +1,41 @@
+{
+  "mcpServers": {
+    "exa": {
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "timeout_ms": 45000,
+      "args": [
+        "C:\\Users\\PC\\OneDrive\\Documents\\ChatGPT\\chats with no projects\\ternary-bonsai-runtime\\web-tools\\node_modules\\mcp-remote\\dist\\proxy.js",
+        "https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa",
+        "--transport",
+        "http-only",
+        "--silent"
+      ]
+    },
+    "reach_backends": {
+      "command": "C:\\Users\\PC\\.agent-reach\\heretic-backend\\.venv\\Scripts\\python.exe",
+      "cwd": "C:\\Users\\PC\\.agent-reach\\heretic-backend",
+      "timeout_ms": 65000,
+      "args": [
+        "C:\\Users\\PC\\.agent-reach\\heretic-backend\\backend.py"
+      ],
+      "env": {
+        "PYTHONUTF8": "1",
+        "MCPORTER_CONFIG": "C:\\Users\\PC\\.agent-reach\\heretic-backend\\mcporter.json",
+        "PATH": "C:\\Users\\PC\\.agent-reach\\heretic-backend\\.venv\\Scripts;C:\\Users\\PC\\.agent-reach\\heretic-backend\\node-tools\\node_modules\\.bin;C:\\Program Files\\nodejs;C:\\Windows\\System32;C:\\Windows;C:\\Users\\PC\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0-full_build\\bin"
+      }
+    },
+    "media": {
+      "command": "C:\\Users\\PC\\.agent-reach\\heretic-backend\\.venv\\Scripts\\python.exe",
+      "cwd": "C:\\Users\\PC\\OneDrive\\Documents\\ChatGPT\\chats with no projects\\ternary-bonsai-runtime",
+      "timeout_ms": 330000,
+      "args": [
+        "C:\\Users\\PC\\OneDrive\\Documents\\ChatGPT\\chats with no projects\\ternary-bonsai-runtime\\media_tools.py"
+      ],
+      "env": {
+        "PYTHONUTF8": "1",
+        "MCPORTER_CONFIG": "C:\\Users\\PC\\.agent-reach\\heretic-backend\\mcporter.json",
+        "PATH": "C:\\Users\\PC\\.agent-reach\\heretic-backend\\.venv\\Scripts;C:\\Users\\PC\\.agent-reach\\heretic-backend\\node-tools\\node_modules\\.bin;C:\\Program Files\\nodejs;C:\\Windows\\System32;C:\\Windows;C:\\Users\\PC\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0-full_build\\bin"
+      }
+    }
+  }
+}

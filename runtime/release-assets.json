@@ -1,0 +1,12 @@
+[
+  {
+    "name": "cudart-llama-bin-win-cuda-13.3-x64.zip",
+    "digest": "sha256:1462a050eb4c684921ba51dcc4cc488a036674c3e73e9945ee705b854808d03e",
+    "size": 390970417
+  },
+  {
+    "name": "llama-prism-b10754-2459f68-bin-win-cuda-13.3-x64.zip",
+    "digest": "sha256:4a589d87d69dc102843c3cdfe6619a6fbbbd731c8cb52f4ab9da82a6f2dfdd1a",
+    "size": 178666352
+  }
+]
