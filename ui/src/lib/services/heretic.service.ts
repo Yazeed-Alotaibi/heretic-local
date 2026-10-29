@@ -47,6 +47,21 @@ export interface Execution {
 	[key: string]: unknown;
 }
 
+export interface GpuStats {
+	name: string;
+	utilization: number | null;
+	memory_used_mib: number | null;
+	memory_total_mib: number | null;
+	power_w: number | null;
+	power_limit_w: number | null;
+	temperature_c: number | null;
+}
+
+export interface GpuUsage {
+	available: boolean;
+	gpus: GpuStats[];
+}
+
 export interface ToolApproval {
 	approval_id: string;
 	tool: string;
@@ -245,6 +260,28 @@ export class HereticService {
 			locked: true
 		});
 		return execution;
+	}
+
+	static watchGpu(onUsage: (usage: GpuUsage | null) => void, interval = 2000): () => void {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		let stopped = false;
+		const check = async () => {
+			// Hidden tabs skip nvidia-smi queries but keep the schedule alive.
+			if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
+				try {
+					const usage = await this.request<GpuUsage>('/gpu');
+					if (!stopped) onUsage(usage);
+				} catch {
+					if (!stopped) onUsage(null);
+				}
+			}
+			if (!stopped) timer = setTimeout(() => void check(), interval);
+		};
+		void check();
+		return () => {
+			stopped = true;
+			if (timer) clearTimeout(timer);
+		};
 	}
 
 	static async request<T>(path: string, options: RequestInit = {}): Promise<T> {

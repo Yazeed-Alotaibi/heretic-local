@@ -6,6 +6,8 @@ import asyncio
 import json
 import os
 import secrets
+import shutil
+import subprocess
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -47,6 +49,43 @@ LOCAL_TOOLS = {
 }
 
 
+GPU_FIELDS = ('name', 'utilization.gpu', 'memory.used', 'memory.total', 'power.draw',
+              'power.limit', 'temperature.gpu')
+
+
+def parse_nvidia_smi(output: str) -> list[dict]:
+    """Parse CSV rows from --format=csv,noheader,nounits; unsupported values become None."""
+    gpus = []
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        # Split from the right so a GPU name containing a comma stays intact.
+        values = [value.strip() for value in line.rsplit(',', len(GPU_FIELDS) - 1)]
+        if len(values) != len(GPU_FIELDS):
+            raise ValueError('Unexpected nvidia-smi output.')
+        gpu = {'name': values[0]}
+        for key, value in zip(('utilization', 'memory_used_mib', 'memory_total_mib', 'power_w',
+                               'power_limit_w', 'temperature_c'), values[1:]):
+            try:
+                gpu[key] = float(value)
+            except ValueError:
+                gpu[key] = None
+        gpus.append(gpu)
+    return gpus
+
+
+def read_nvidia_gpus() -> list[dict]:
+    executable = shutil.which('nvidia-smi')
+    if not executable:
+        raise RuntimeError('nvidia-smi was not found.')
+    # CREATE_NO_WINDOW keeps the hidden gateway from flashing a console on Windows.
+    result = subprocess.run(
+        [executable, '--query-gpu=' + ','.join(GPU_FIELDS), '--format=csv,noheader,nounits'],
+        stdin=subprocess.DEVNULL, capture_output=True, timeout=5, check=True,
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    return parse_nvidia_smi(result.stdout.decode('utf-8', 'replace'))
+
+
 class Input(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
@@ -74,7 +113,7 @@ class RecordInput(Input):
 
 
 def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1:8081',
-               ui_root: Path | None = None, transport=None) -> FastAPI:
+               ui_root: Path | None = None, transport=None, gpu_reader=read_nvidia_gpus) -> FastAPI:
     data_root = data_root or Path(os.environ.get('HERETIC_DATA', Path.home() / '.heretic/data'))
     ui_root = ui_root or Path(os.environ.get('HERETIC_UI', Path(__file__).parents[2] / 'ui/dist'))
     store, knowledge, state = Store(data_root), Knowledge(data_root), State()
@@ -215,6 +254,20 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
             pass
         return {'service': 'heretic-gateway', 'app': 'ready', 'model': model,
                 'memory': 'ready', 'files': files}
+
+    gpu_lock, gpu_cache = asyncio.Lock(), {'at': None, 'value': None}
+
+    @app.get('/api/heretic/gpu')
+    async def gpu_usage():
+        # Several open pages share one nvidia-smi query per interval.
+        async with gpu_lock:
+            if gpu_cache['at'] is None or time.monotonic() - gpu_cache['at'] >= 1.5:
+                try:
+                    value = {'available': True, 'gpus': await asyncio.to_thread(gpu_reader)}
+                except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+                    value = {'available': False, 'gpus': []}
+                gpu_cache.update(at=time.monotonic(), value=value)
+            return gpu_cache['value']
 
     @app.post('/api/heretic/executions')
     async def begin(data: Begin, request: Request):

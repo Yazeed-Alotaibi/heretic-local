@@ -381,3 +381,42 @@ describe('Heretic execution boundary', () => {
 		expect((await second).error).toContain('denied');
 	});
 });
+
+describe('Heretic GPU usage', () => {
+	it('polls GPU usage with the session header and stops on cleanup', async () => {
+		vi.useFakeTimers();
+		const gpu = { available: true, gpus: [{ name: 'GPU', utilization: 40 }] };
+		fetchMock.mockImplementation(
+			async (url: string) =>
+				new Response(JSON.stringify(url.endsWith('/session') ? { token: 'session-test' } : gpu))
+		);
+		const onUsage = vi.fn();
+		const stop = HereticService.watchGpu(onUsage, 2000);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(onUsage).toHaveBeenLastCalledWith(gpu);
+		const gpuCall = fetchMock.mock.calls.find(([url]) => url === '/api/heretic/gpu');
+		expect(gpuCall?.[1].headers['X-Heretic-Session']).toBe('session-test');
+		await vi.advanceTimersByTimeAsync(2000);
+		const polls = fetchMock.mock.calls.filter(([url]) => url === '/api/heretic/gpu').length;
+		expect(polls).toBe(2);
+		stop();
+		await vi.advanceTimersByTimeAsync(10000);
+		expect(fetchMock.mock.calls.filter(([url]) => url === '/api/heretic/gpu').length).toBe(2);
+	});
+
+	it('reports unavailable usage as null and keeps retrying', async () => {
+		vi.useFakeTimers();
+		fetchMock.mockImplementation(async (url: string) =>
+			url.endsWith('/session')
+				? new Response(JSON.stringify({ token: 'session-test' }))
+				: new Response(JSON.stringify({ detail: 'down' }), { status: 503 })
+		);
+		const onUsage = vi.fn();
+		const stop = HereticService.watchGpu(onUsage, 2000);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(onUsage).toHaveBeenLastCalledWith(null);
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(onUsage).toHaveBeenCalledTimes(2);
+		stop();
+	});
+});
