@@ -14,9 +14,10 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from .assets import StaticAssets
 from .knowledge import Knowledge
 from .state import Execution, State, ToolCollector, canonical, digest
 from .store import Store
@@ -116,6 +117,7 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
                ui_root: Path | None = None, transport=None, gpu_reader=read_nvidia_gpus) -> FastAPI:
     data_root = data_root or Path(os.environ.get('HERETIC_DATA', Path.home() / '.heretic/data'))
     ui_root = ui_root or Path(os.environ.get('HERETIC_UI', Path(__file__).parents[2] / 'ui/dist'))
+    assets = StaticAssets(directory=ui_root, html=True, check_dir=False)
     store, knowledge, state = Store(data_root), Knowledge(data_root), State()
 
     @asynccontextmanager
@@ -149,7 +151,7 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
         private = request.url.path.startswith('/api/heretic/') and request.url.path not in {
             '/api/heretic/session', '/api/heretic/health'}
         private = private or request.url.path == '/v1/stream'
-        guarded = request.method != 'GET' and not request.url.path.startswith('/files/')
+        guarded = request.method not in {'GET', 'HEAD'} and not request.url.path.startswith('/files/')
         if private or guarded:
             state.sweep()
             token = request.headers.get('x-heretic-session', '')
@@ -163,7 +165,7 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
             response = JSONResponse({'detail': str(error)}, status_code=409)
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['Referrer-Policy'] = 'no-referrer'
-        response.headers['Cache-Control'] = 'no-store'
+        response.headers.setdefault('Cache-Control', 'no-store')
         if request.url.path in {'/', '/index.html'}:
             response.headers['Content-Security-Policy'] = (
                 "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
@@ -732,7 +734,7 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
         return Response(content, upstream.status_code, media_type=upstream.headers.get('content-type'))
 
     # Explicit engine interface allowlist prevents alternative completion/tool bypass routes.
-    @app.api_route('/{path:path}', methods=['GET', 'POST', 'DELETE'])
+    @app.api_route('/{path:path}', methods=['GET', 'HEAD', 'POST', 'DELETE'])
     async def passthrough(path: str, request: Request):
         allowed = {
             'health': {'GET'}, 'props': {'GET'}, 'slots': {'GET'}, 'v1/models': {'GET'},
@@ -801,13 +803,8 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
             return Response(response.content, response.status_code, headers={
                 k: v for k, v in response.headers.items() if k in {
                     'content-type', 'content-disposition', 'content-range', 'accept-ranges'}})
-        if request.method == 'GET' and not path.startswith(('api/', 'v1/')):
-            root = ui_root.resolve()
-            file = (root / (path or 'index.html')).resolve()
-            if file.is_relative_to(root) and file.is_file():
-                return FileResponse(file)
-            if '.' not in path and (root / 'index.html').is_file():
-                return FileResponse(root / 'index.html')
+        if request.method in {'GET', 'HEAD'} and not path.startswith(('api/', 'v1/')):
+            return await assets.get_response(path, request.scope)
         raise HTTPException(404, 'Endpoint not available.')
 
     return app

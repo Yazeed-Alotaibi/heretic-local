@@ -14,7 +14,7 @@ const config = {
 			assets: outDir,
 			fallback: 'index.html',
 			pages: outDir,
-			precompress: false,
+			precompress: true,
 			strict: true
 		}),
 		output: {
