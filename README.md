@@ -24,6 +24,54 @@ Its MCP PATH contains only the required executable folders instead of the full
 session environment. Existing installed files were not changed by making this
 repository.
 
+## Launch the model
+
+These steps are for the installed setup on the Windows PC. Heretic also starts
+hidden at every Windows sign-in, so usually only step 4 is needed.
+
+1. Sign in to Windows on the PC. For phone access, make sure Tailscale is connected.
+2. Double-click the desktop **Heretic** shortcut, or run the launcher from PowerShell:
+
+   ```powershell
+   cd 'C:\Users\PC\OneDrive\Documents\ChatGPT\chats with no projects\ternary-bonsai-runtime'
+   .\Open-Heretic.ps1
+   ```
+
+   If script execution is disabled, run
+   `powershell -NoProfile -ExecutionPolicy Bypass -File .\Open-Heretic.ps1` instead.
+   Add `-NoBrowser` to skip opening the page.
+3. Wait up to two minutes while the model loads onto the GPU. The launcher checks
+   the gateway, model, 64k context, all thirteen tools and the file server. It
+   reuses an instance that is already running.
+4. On the PC, open `http://127.0.0.1:8080/`. On the phone, connect Tailscale and
+   open `http://desktop-7ov7vat:8080/`. The full `ts.net` name also works only while
+   it resolves; IP addresses are rejected by the gateway's host check.
+   If the page reports the model as loading, wait and refresh.
+5. If you use memory, select a project before the first message.
+
+If something goes wrong:
+
+- Read `startup-status.log` in the runtime folder. It shows `READY` or the error.
+- `is not recognized as the name of a cmdlet`: PowerShell is in another folder,
+  such as `C:\Users\PC`. Run the `cd` command from step 2 first.
+- To restart owned components cleanly, run the following from the runtime folder:
+
+  ```powershell
+  cd 'C:\Users\PC\OneDrive\Documents\ChatGPT\chats with no projects\ternary-bonsai-runtime'
+  .\Stop-Heretic.ps1
+  .\Open-Heretic.ps1
+  ```
+- `DNS_PROBE_FINISHED_NXDOMAIN` for the `ts.net` address: Tailscale is disconnected,
+  MagicDNS is off, or the tailnet DNS name changed (compare the `DNSName` from
+  `tailscale status --self --peers=false --json`). Use `http://desktop-7ov7vat:8080/`. Run `tailscale status` and reconnect with `tailscale up`; check
+  the routes with `tailscale serve status` (restore them as in step 5 of the restore
+  procedure below). Use `http://127.0.0.1:8080/` on the PC meanwhile.
+- "Port 8080/8081 is already in use" or "A different model is running": another
+  program, such as LM Studio's server, holds the port or has a model loaded. Stop
+  it yourself and launch again. The launchers never stop processes they do not own.
+
+To stop Heretic, run `.\Stop-Heretic.ps1` after the `cd` command from step 2.
+
 ## Restore on the same PC
 
 Keep or recover the model and runtime binaries separately. The configured model is:
