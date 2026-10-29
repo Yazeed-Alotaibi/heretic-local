@@ -80,7 +80,11 @@ test and may start the saved runtime.
 
 - Model: Ternary-Bonsai-2-27B-Uncensored-Heretic-PQ2_0.gguf
 - GPU: RTX 5070 Ti; all requested model layers are offloaded.
-- Context: 65,536 tokens; one chat slot; Q8_0 key/value cache; flash attention.
+- Context: 65,536 tokens by default; one chat slot; Q8_0 key/value cache; flash attention.
+  `Open-Heretic.ps1 -ContextSize 98304` or `131072` starts 96k or 128k instead after
+  `Stop-Heretic.ps1`, and saves that choice in `context-size.txt` for later launches.
+  Without `-ContextSize`, reopening accepts a running 64k, 96k or 128k instance.
+  The larger sizes need more GPU memory and have not been measured on this PC.
 - Q8 cache reduces memory use compared with the original F16 cache. Its effect
   on answer quality has not been benchmarked.
 - Start after the previous instance is stopped: `./Start-Heretic.ps1`
@@ -89,7 +93,7 @@ test and may start the saved runtime.
 - Startup logs have unique UTC filenames. The launcher refuses to replace an
   existing local listener. `before-64k-process.json` records the previous command.
 - Heretic starts hidden when this Windows user signs in, using the current-user
-  Startup folder's `Heretic.lnk`. It loads the same model, 64k context, and tools.
+  Startup folder's `Heretic.lnk`. It loads the same model, saved context size (64k by default), and tools.
 - Double-click the desktop **Heretic** shortcut to start or reopen the chat.
   `Open-Heretic.ps1` reuses an existing instance and checks the model, context,
   all thirteen tools, gateway, memory, and file server. It never stops an existing chat.

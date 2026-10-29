@@ -40,6 +40,9 @@ hidden at every Windows sign-in, so usually only step 4 is needed.
    If script execution is disabled, run
    `powershell -NoProfile -ExecutionPolicy Bypass -File .\Open-Heretic.ps1` instead.
    Add `-NoBrowser` to skip opening the page.
+   To change the context window, stop Heretic and pass `-ContextSize 65536` (64k,
+   default), `98304` (96k) or `131072` (128k). A successful start saves that size
+   in `context-size.txt`; later shortcut and sign-in launches reuse it.
 3. Wait up to two minutes while the model loads onto the GPU. The launcher checks
    the gateway, model, 64k context, all thirteen tools and the file server. It
    reuses an instance that is already running.
@@ -74,6 +77,15 @@ If something goes wrong:
 - "Port 8080/8081 is already in use" or "A different model is running": another
   program, such as LM Studio's server, holds the port or has a model loaded. Stop
   it yourself and launch again. The launchers never stop processes they do not own.
+
+Larger context windows reserve more GPU memory for the Q8_0 key/value cache. The
+model was trained on 262,144 tokens, so 128k is within its range, but it must fit
+in the 16 GB card. After switching, check the GPU badge or `nvidia-smi`: if memory
+is near full or a short reply is much slower than about 80 tokens/s, part of the
+model has spilled into system memory. Return with
+`.\Stop-Heretic.ps1` and `.\Open-Heretic.ps1 -ContextSize 65536`. If the larger
+model cannot start at all, `startup-status.log` reports the failure and the saved
+size is left unchanged.
 
 To stop Heretic, run `.\Stop-Heretic.ps1` after the `cd` command from step 2.
 
