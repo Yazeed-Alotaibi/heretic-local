@@ -24,6 +24,39 @@ Its MCP PATH contains only the required executable folders instead of the full
 session environment. Existing installed files were not changed by making this
 repository.
 
+## Launch the model
+
+These steps are for the installed setup on the Windows PC. Heretic also starts
+hidden at every Windows sign-in, so usually only step 4 is needed.
+
+1. Sign in to Windows on the PC. For phone access, make sure Tailscale is connected.
+2. Double-click the desktop **Heretic** shortcut, or run the launcher from PowerShell:
+
+   ```powershell
+   cd 'C:\Users\PC\OneDrive\Documents\ChatGPT\chats with no projects\ternary-bonsai-runtime'
+   .\Open-Heretic.ps1
+   ```
+
+   If script execution is disabled, run
+   `powershell -NoProfile -ExecutionPolicy Bypass -File .\Open-Heretic.ps1` instead.
+   Add `-NoBrowser` to skip opening the page.
+3. Wait up to two minutes while the model loads onto the GPU. The launcher checks
+   the gateway, model, 64k context, all thirteen tools and the file server. It
+   reuses an instance that is already running.
+4. Open `http://desktop-7ov7vat.tail4c4266.ts.net:8080/` on the PC or the phone.
+   If the page reports the model as loading, wait and refresh.
+5. If you use memory, select a project before the first message.
+
+If something goes wrong:
+
+- Read `startup-status.log` in the runtime folder. It shows `READY` or the error.
+- To restart owned components cleanly, run `.\Stop-Heretic.ps1`, then `.\Open-Heretic.ps1`.
+- "Port 8080/8081 is already in use" or "A different model is running": another
+  program, such as LM Studio's server, holds the port or has a model loaded. Stop
+  it yourself and launch again. The launchers never stop processes they do not own.
+
+To stop Heretic, run `.\Stop-Heretic.ps1` from the runtime folder.
+
 ## Restore on the same PC
 
 Keep or recover the model and runtime binaries separately. The configured model is:
