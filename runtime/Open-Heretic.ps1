@@ -1,8 +1,11 @@
 [CmdletBinding()]
-param([switch]$NoBrowser)
+param([ValidateSet(65536, 98304, 131072)][int]$ContextSize, [switch]$NoBrowser)
 $ErrorActionPreference = 'Stop'
 $runtimeDir = $PSScriptRoot
 $logFile = Join-Path $runtimeDir 'startup-status.log'
+# An explicit -ContextSize becomes the saved default for later shortcut and sign-in launches.
+$contextFile = Join-Path $runtimeDir 'context-size.txt'
+$allowedContexts = @(65536, 98304, 131072)
 $deadline = [DateTime]::UtcNow.AddSeconds(120)
 $mutex = New-Object System.Threading.Mutex($false, 'Local\HereticSavedStartup')
 $hasLock = $false
@@ -25,7 +28,12 @@ try {
         Test-OwnedGatewayListener $listener $gatewayRecord
         & (Join-Path $runtimeDir 'Stop-Heretic.ps1') -ValidateOnly | Out-Null
     } else {
-        & (Join-Path $runtimeDir 'Start-Heretic.ps1') -ContextSize 65536 | Out-Null
+        $startContext = if ($ContextSize) { $ContextSize } else { 65536 }
+        if (-not $ContextSize -and (Test-Path -LiteralPath $contextFile)) {
+            $saved = 0
+            if ([int]::TryParse("$(Get-Content -LiteralPath $contextFile -Raw)".Trim(), [ref]$saved) -and $saved -in $allowedContexts) { $startContext = $saved }
+        }
+        & (Join-Path $runtimeDir 'Start-Heretic.ps1') -ContextSize $startContext | Out-Null
     }
     do {
         $ready = $false
@@ -40,13 +48,16 @@ try {
     $savedModel = 'C:\Users\PC\.lmstudio\models\OS-Software\Ternary-Bonsai-2-27B-Uncensored-Heretic-GGUF\Ternary-Bonsai-2-27B-Uncensored-Heretic-PQ2_0.gguf'
     if ((Invoke-RestMethod 'http://127.0.0.1:8080/props' -TimeoutSec 5).model_path -ne $savedModel) { throw 'A different model is running; it was left intact.' }
     $slots = Invoke-RestMethod 'http://127.0.0.1:8080/slots' -TimeoutSec 5
-    if ($slots.n_ctx -notcontains 65536) { throw 'The running model does not have the saved 64k context; it was left running.' }
+    $runningContext = @($slots.n_ctx)[0]
+    if ($ContextSize -and $runningContext -ne $ContextSize) { throw "The running model has a $runningContext-token context, not $ContextSize; it was left running. Run Stop-Heretic.ps1, then Open-Heretic.ps1 -ContextSize $ContextSize." }
+    if ($runningContext -notin $allowedContexts) { throw "The running model has an unsupported $runningContext-token context; it was left running." }
     $tools = Invoke-RestMethod 'http://127.0.0.1:8080/tools' -TimeoutSec 15
     $expected = @('exa_web_search_exa', 'exa_web_fetch_exa', 'reach_backends_read_webpage', 'reach_backends_search_github_repositories', 'reach_backends_get_agent_reach_status', 'reach_backends_search_youtube', 'reach_backends_read_youtube_video', 'media_download_video', 'memory_search', 'memory_read', 'memory_propose', 'knowledge_search', 'knowledge_read')
     foreach ($toolName in $expected) {
         if ($toolName -notin $tools.tool) { throw "Saved tool is missing: $toolName. The running chat was left intact." }
     }
-    "$(Get-Date -Format o) READY: gateway, 64k context, thirteen tools, memory, file service." | Set-Content -LiteralPath $logFile
+    if ($ContextSize) { [string]$ContextSize | Set-Content -LiteralPath $contextFile }
+    "$(Get-Date -Format o) READY: gateway, $($runningContext / 1024)k context, thirteen tools, memory, file service." | Set-Content -LiteralPath $logFile
     if (-not $NoBrowser) { Start-Process 'http://desktop-7ov7vat.tail4c4266.ts.net:8080/' }
 } catch {
     "$(Get-Date -Format o) ERROR: $($_.Exception.Message)" | Set-Content -LiteralPath $logFile

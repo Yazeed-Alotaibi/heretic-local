@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([ValidateSet(8192, 65536)][int]$ContextSize = 65536, [switch]$WithoutTools)
+param([ValidateSet(8192, 65536, 98304, 131072)][int]$ContextSize = 65536, [switch]$WithoutTools)
 $ErrorActionPreference = 'Stop'
 $mutex = New-Object System.Threading.Mutex($false, 'Local\HereticSavedStartup')
 $hasLock = $false
@@ -119,7 +119,7 @@ try {
     $gatewayRecord.EffectivePid = $gatewayListener[0].OwningProcess
     Save-OwnedRecords
     $serverArgs = @('-m', $modelFile, '--host', '127.0.0.1', '--port', '8081', '-ngl', '99', '-c', [string]$ContextSize, '-np', '1', '-fa', 'on', '--fit', 'off', '--reasoning-preserve', '--cors-origins', 'http://127.0.0.1:8080,http://localhost:8080,http://desktop-7ov7vat.tail4c4266.ts.net:8080,http://desktop-7ov7vat:8080')
-    if ($ContextSize -eq 65536) { $serverArgs += @('-ctk', 'q8_0', '-ctv', 'q8_0') }
+    if ($ContextSize -ge 65536) { $serverArgs += @('-ctk', 'q8_0', '-ctv', 'q8_0') }
     $serverArgs += @('--mcp-servers-config', $mcpFile)
     $model = Start-OwnedProcess 'model' $serverExe @($serverArgs | ForEach-Object { '"' + $_ + '"' }) (Join-Path $runtimeDir 'bin')
     if (-not $reuseFiles) { $files = Start-OwnedProcess 'files' $config.mcpServers.media.command @('"' + (Join-Path $runtimeDir 'media_tools.py') + '"', '--serve-files') $runtimeDir }
