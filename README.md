@@ -43,7 +43,8 @@ hidden at every Windows sign-in, so usually only step 4 is needed.
 3. Wait up to two minutes while the model loads onto the GPU. The launcher checks
    the gateway, model, 64k context, all thirteen tools and the file server. It
    reuses an instance that is already running.
-4. Open `http://desktop-7ov7vat.tail4c4266.ts.net:8080/` on the PC or the phone.
+4. On the PC, open `http://127.0.0.1:8080/`. On the phone, open
+   `http://desktop-7ov7vat.tail4c4266.ts.net:8080/` with Tailscale connected.
    If the page reports the model as loading, wait and refresh.
 5. If you use memory, select a project before the first message.
 
@@ -59,6 +60,10 @@ If something goes wrong:
   .\Stop-Heretic.ps1
   .\Open-Heretic.ps1
   ```
+- `DNS_PROBE_FINISHED_NXDOMAIN` for the `ts.net` address: Tailscale is disconnected
+  or MagicDNS is off. Run `tailscale status` and reconnect with `tailscale up`; check
+  the routes with `tailscale serve status` (restore them as in step 5 of the restore
+  procedure below). Use `http://127.0.0.1:8080/` on the PC meanwhile.
 - "Port 8080/8081 is already in use" or "A different model is running": another
   program, such as LM Studio's server, holds the port or has a model loaded. Stop
   it yourself and launch again. The launchers never stop processes they do not own.
