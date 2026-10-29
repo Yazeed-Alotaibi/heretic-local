@@ -50,12 +50,20 @@ hidden at every Windows sign-in, so usually only step 4 is needed.
 If something goes wrong:
 
 - Read `startup-status.log` in the runtime folder. It shows `READY` or the error.
-- To restart owned components cleanly, run `.\Stop-Heretic.ps1`, then `.\Open-Heretic.ps1`.
+- `is not recognized as the name of a cmdlet`: PowerShell is in another folder,
+  such as `C:\Users\PC`. Run the `cd` command from step 2 first.
+- To restart owned components cleanly, run the following from the runtime folder:
+
+  ```powershell
+  cd 'C:\Users\PC\OneDrive\Documents\ChatGPT\chats with no projects\ternary-bonsai-runtime'
+  .\Stop-Heretic.ps1
+  .\Open-Heretic.ps1
+  ```
 - "Port 8080/8081 is already in use" or "A different model is running": another
   program, such as LM Studio's server, holds the port or has a model loaded. Stop
   it yourself and launch again. The launchers never stop processes they do not own.
 
-To stop Heretic, run `.\Stop-Heretic.ps1` from the runtime folder.
+To stop Heretic, run `.\Stop-Heretic.ps1` after the `cd` command from step 2.
 
 ## Restore on the same PC
 
