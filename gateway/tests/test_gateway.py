@@ -588,3 +588,45 @@ def test_stream_activity_cannot_revive_invalid_execution(gateway, monkeypatch, i
     assert ex.touched == admitted[0] < now[0]
     if invalidation != 'generation':
         assert token not in app.state.capabilities.executions
+
+
+def test_nvidia_smi_parsing_keeps_names_and_unsupported_values():
+    from heretic_gateway.app import parse_nvidia_smi
+    gpus = parse_nvidia_smi('NVIDIA GeForce RTX 5070 Ti, 87, 14512, 16303, 212.40, 300.00, 63\n'
+                            'Odd, Name, [N/A], 10, 20, [Not Supported], [N/A], 40\n')
+    assert gpus[0] == {'name': 'NVIDIA GeForce RTX 5070 Ti', 'utilization': 87.0,
+                       'memory_used_mib': 14512.0, 'memory_total_mib': 16303.0, 'power_w': 212.4,
+                       'power_limit_w': 300.0, 'temperature_c': 63.0}
+    assert gpus[1]['name'] == 'Odd, Name' and gpus[1]['utilization'] is None
+    assert gpus[1]['power_w'] is None and gpus[1]['temperature_c'] == 40.0
+    with pytest.raises(ValueError):
+        parse_nvidia_smi('too, few\n')
+
+
+def test_gpu_usage_requires_session_and_shares_cached_reads(tmp_path):
+    calls = []
+
+    def reader():
+        calls.append(1)
+        return [{'name': 'GPU', 'utilization': 50.0}]
+
+    app = create_app(tmp_path, transport=httpx.MockTransport(lambda r: httpx.Response(200)),
+                     gpu_reader=reader)
+    with TestClient(app) as client:
+        assert client.get('/api/heretic/gpu').status_code == 401
+        client.headers['X-Heretic-Session'] = client.get('/api/heretic/session').json()['token']
+        first = client.get('/api/heretic/gpu').json()
+        assert first == {'available': True, 'gpus': [{'name': 'GPU', 'utilization': 50.0}]}
+        assert client.get('/api/heretic/gpu').json() == first
+        assert len(calls) == 1
+
+
+def test_gpu_usage_reports_unavailable_without_details(tmp_path):
+    def reader():
+        raise RuntimeError('nvidia-smi was not found.')
+
+    app = create_app(tmp_path, transport=httpx.MockTransport(lambda r: httpx.Response(200)),
+                     gpu_reader=reader)
+    with TestClient(app) as client:
+        client.headers['X-Heretic-Session'] = client.get('/api/heretic/session').json()['token']
+        assert client.get('/api/heretic/gpu').json() == {'available': False, 'gpus': []}

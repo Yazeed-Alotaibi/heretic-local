@@ -14,7 +14,9 @@ is ready. The phone can open the page while loading. `/health`, `/props`, and
 `/slots` pass through to the model; `/api/heretic/health` reports gateway, model,
 memory, and file-service readiness. The memory and knowledge tools are
 `memory_search`, `memory_read`, `memory_propose`, `knowledge_search`, and
-`knowledge_read`, in addition to the existing eight tools.
+`knowledge_read`, in addition to the existing eight tools. `/api/heretic/gpu`
+(session token required) reports `nvidia-smi` load, memory, power and temperature
+for the interface's GPU badge; it is not a model tool.
 
 Build the UI in the repository before installation; Vite emits `ui/dist/`.
 From the repository root:

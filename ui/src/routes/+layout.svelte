@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '../app.css';
+	import HereticGpu from '$lib/components/HereticGpu.svelte';
 	import HereticMemory from '$lib/components/HereticMemory.svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
@@ -324,4 +325,5 @@
 	/>
 </div>
 
+<HereticGpu />
 {#if page.route.id !== '/memory'}<HereticMemory />{/if}

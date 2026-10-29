@@ -49,6 +49,11 @@ hidden at every Windows sign-in, so usually only step 4 is needed.
    If the page reports the model as loading, wait and refresh.
 5. If you use memory, select a project before the first message.
 
+The badge next to the Memory button shows GPU load, used/total video memory and,
+on wider screens, power draw and temperature. The gateway reads them with
+`nvidia-smi` at most every 1.5 seconds; hover for full details. The badge is
+hidden when `nvidia-smi` is unavailable.
+
 If something goes wrong:
 
 - Read `startup-status.log` in the runtime folder. It shows `READY` or the error.
