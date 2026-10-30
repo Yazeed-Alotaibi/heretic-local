@@ -42,10 +42,16 @@ LOCAL_TOOLS = {
                         'enum': ['fact', 'preference', 'note', 'checkpoint']},
                         'record_id': {'type': 'string'},
                         'expected_revision': {'type': 'integer'}}, ['content']),
-    'knowledge_search': ('Search local documents; returns source and page references.',
+    'knowledge_search': ('Search local documents; returns ranked passages that fit the turn budget, '
+                         'with source, page, section and zero-based '
+                         'chunk_index. Use knowledge_read with that start_chunk to expand a hit.',
                          {'query': {'type': 'string'}}, ['query']),
-    'knowledge_read': ('Read a bounded local document with references.',
-                       {'id': {'type': 'string'}}, ['id']),
+    'knowledge_read': ('Read local document chunks with references. Pass a search hit chunk_index '
+                       'as start_chunk. Default: first chunk. Continue with next_chunk when present; '
+                       'the shared turn token budget still applies.',
+                       {'id': {'type': 'string'},
+                        'start_chunk': {'type': 'integer', 'minimum': 0},
+                        'max_chunks': {'type': 'integer', 'minimum': 1, 'maximum': 20}}, ['id']),
 }
 
 
@@ -496,6 +502,8 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
                 selected = {'id': record['id'], 'content': record.get('content', record.get('text',
                     record.get('excerpt', '')))[:12000], 'source': record.get('source', 'local'),
                     'page': record.get('page')}
+                if 'chunk_index' in record:
+                    selected.update(chunk_index=record['chunk_index'], section=record.get('section'))
                 target = profile if record.get('kind') == 'preference' else facts
                 target.append(selected)
                 trial = [{'role': 'system', 'content': POLICY + '\nApproved preferences:\n' + canonical(profile)}]
@@ -506,7 +514,8 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
                     target.pop()
                     continue
                 blocks, token_count = trial, cost
-                records.append({'id': selected['id'], 'source': selected['source'], 'page': selected['page']})
+                records.append({key: selected[key] for key in
+                                ('id', 'source', 'page', 'chunk_index', 'section') if key in selected})
             current(ex)
             ex.token_count += token_count
             if ex.token_count > 4096:
@@ -563,13 +572,18 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
             elif name == 'knowledge_search':
                 result = knowledge.search(params['query'], ex.scope)
             else:
-                result = knowledge.read(params['id'], ex.scope)
-                result['chunks'] = result['chunks'][:1]
-                result['text'] = '\n'.join(chunk['text'] for chunk in result['chunks'])
-                result['truncated'] = True
+                result = knowledge.read(params['id'], ex.scope,
+                    start_chunk=params.get('start_chunk', 0), max_chunks=params.get('max_chunks', 1))
             text = canonical(result)
             cost = await tokenize(text)
             current(ex, generation)
+            if name == 'knowledge_search':
+                # Keep useful top-ranked hits instead of rejecting a whole result set.
+                # Leave at least one hit so exhausted budgets retain the explicit error.
+                while len(result) > 1 and cost > max(0, 4096 - ex.token_count):
+                    result.pop()
+                    cost = await tokenize(canonical(result))
+                    current(ex, generation)
             if cost > max(0, 4096 - ex.token_count):
                 result = {'error': 'Memory budget reached for this turn. Ask a narrower question in a new turn.'}
             elif result:
@@ -811,3 +825,4 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
         raise HTTPException(404, 'Endpoint not available.')
 
     return app
+
