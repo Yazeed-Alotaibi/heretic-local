@@ -213,11 +213,15 @@ def test_document_recall_includes_chunk_reference(gateway):
     assert 'chunk_index' in json.dumps(payload['messages'])
 
 
-def test_knowledge_search_returns_hits_that_fit_turn_budget(gateway):
+@pytest.mark.parametrize('tool_name', ['knowledge_search', 'memory_search'])
+def test_knowledge_search_returns_hits_that_fit_turn_budget(gateway, tool_name):
     client, app, _requests = gateway
     for i in range(6):
-        app.state.knowledge.import_document(f'long-{i}.txt',
-            ('target ' + 'word ' * 390).encode())
+        if tool_name == 'knowledge_search':
+            app.state.knowledge.import_document(f'long-{i}.txt',
+                ('target ' + 'word ' * 390).encode())
+        else:
+            app.state.store.save_record('target ' + 'word ' * 390)
     original = app.state.client._transport.handler
 
     def upstream(request):
@@ -225,7 +229,7 @@ def test_knowledge_search_returns_hits_that_fit_turn_budget(gateway):
         if request.url.path == '/v1/chat/completions':
             content = response.json()
             call = content['choices'][0]['message']['tool_calls'][0]
-            call['function'] = {'name': 'knowledge_search', 'arguments': '{"query":"target"}'}
+            call['function'] = {'name': tool_name, 'arguments': '{"query":"target"}'}
             return httpx.Response(200, json=content)
         return response
 
@@ -233,11 +237,30 @@ def test_knowledge_search_returns_hits_that_fit_turn_budget(gateway):
     token = begin(client)
     assert generate(client, token).status_code == 200
     response = client.post('/tools', json={'execution_token': token, 'tool_call_id': 'call-1',
-        'tool': 'knowledge_search', 'params': {'query': 'target'}})
+        'tool': tool_name, 'params': {'query': 'target'}})
     hits = response.json()
     assert isinstance(hits, list) and 0 < len(hits) < 6
-    assert 'chunk_index' in hits[0]
+    assert 'id' in hits[0]
     assert client.get('/api/heretic/context/' + token).json()['token_count'] <= 4096
+
+
+def test_memory_shortlist_reserves_tools_keeps_evidence_and_reduces_calls(gateway):
+    client, app, requests = gateway
+    for i in range(20):
+        app.state.store.save_record(f'Old unrelated preference {i}: ' + 'background ' * 90,
+                                    kind='preference')
+    preference = app.state.store.save_record('For schedule reviews use the current baseline.',
+                                            kind='preference')
+    doc = app.state.knowledge.import_document('schedule.txt', b'schedule milestone evidence')
+    token = begin(client, text='schedule')
+    assert generate(client, token, text='schedule').status_code == 200
+    context = client.get('/api/heretic/context/' + token).json()
+    assert context['token_count'] <= 2560
+    assert {preference['id'], doc['id']} <= {r['id'] for r in context['records']}
+    templates = sum(path == '/apply-template' for path, _ in requests)
+    assert templates <= 3
+    assert generate(client, token, text='schedule').status_code == 200
+    assert sum(path == '/apply-template' for path, _ in requests) == templates
 
 
 def test_stream_ids_are_server_owned_and_lookup_is_session_scoped(gateway):

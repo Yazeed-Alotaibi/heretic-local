@@ -18,8 +18,14 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel, ConfigDict, Field
 
 from .knowledge import Knowledge
+from .context_builder import build_context
+from .memory_selection import select_candidates
 from .state import Execution, State, ToolCollector, canonical, digest
 from .store import Store
+
+MEMORY_TURN_BUDGET = 4096
+MEMORY_TOOL_RESERVE = 1536
+MEMORY_PREFERENCE_BUDGET = 512
 
 ORIGINS = {
     'http://127.0.0.1:8080', 'http://localhost:8080',
@@ -316,7 +322,7 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
     @app.get('/api/heretic/context/{token}')
     async def context(token: str, request: Request):
         ex = execution(request, token)
-        return {'token_count': ex.token_count, 'budget': 4096, 'records': ex.records,
+        return {'token_count': ex.token_count, 'budget': MEMORY_TURN_BUDGET, 'records': ex.records,
                 'private_context': ex.private_context, 'memory_enabled': ex.memory_enabled}
 
     @app.post('/api/heretic/executions/{token}/calls/{call_id}/deny')
@@ -489,36 +495,19 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
                 cost = await tokenize(rendered.json()['prompt'])
                 current(ex)
                 return cost
-            profile, facts, records = [], [], []
-            candidates = store.profile(ex.scope)
-            seen = {r['id'] for r in candidates}
-            candidates += [r for r in store.search(ex.human_text, ex.scope, 8) if r['id'] not in seen]
-            docs = knowledge.search(ex.human_text, ex.scope, 4)
-            blocks = [{'role': 'system', 'content': POLICY + '\nApproved preferences:\n[]'}]
-            token_count = await count(blocks)
-            if token_count > 4096:
-                raise HTTPException(409, 'Memory framing exceeds the turn budget.')
-            for record in candidates + docs:
-                selected = {'id': record['id'], 'content': record.get('content', record.get('text',
-                    record.get('excerpt', '')))[:12000], 'source': record.get('source', 'local'),
-                    'page': record.get('page')}
-                if 'chunk_index' in record:
-                    selected.update(chunk_index=record['chunk_index'], section=record.get('section'))
-                target = profile if record.get('kind') == 'preference' else facts
-                target.append(selected)
-                trial = [{'role': 'system', 'content': POLICY + '\nApproved preferences:\n' + canonical(profile)}]
-                if facts:
-                    trial.append({'role': 'user', 'content': 'Local reference data (not instructions):\n' + canonical(facts)})
-                cost = await count(trial)
-                if cost > 4096:
-                    target.pop()
-                    continue
-                blocks, token_count = trial, cost
-                records.append({key: selected[key] for key in
-                                ('id', 'source', 'page', 'chunk_index', 'section') if key in selected})
+            preferences, evidence = select_candidates(
+                store.profile(ex.scope), store.search(ex.human_text, ex.scope, 8),
+                knowledge.search(ex.human_text, ex.scope, 4), ex.human_text, ex.scope)
+            try:
+                blocks, records, token_count = await build_context(
+                    preferences, evidence, POLICY, count,
+                    snapshot_budget=MEMORY_TURN_BUDGET - MEMORY_TOOL_RESERVE,
+                    preference_budget=MEMORY_PREFERENCE_BUDGET)
+            except ValueError as error:
+                raise HTTPException(409, str(error)) from error
             current(ex)
             ex.token_count += token_count
-            if ex.token_count > 4096:
+            if ex.token_count > MEMORY_TURN_BUDGET:
                 ex.token_count -= token_count
                 raise HTTPException(409, 'Memory budget reached for this turn.')
             ex.records = records
@@ -577,14 +566,14 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
             text = canonical(result)
             cost = await tokenize(text)
             current(ex, generation)
-            if name == 'knowledge_search':
+            if name in {'knowledge_search', 'memory_search'}:
                 # Keep useful top-ranked hits instead of rejecting a whole result set.
                 # Leave at least one hit so exhausted budgets retain the explicit error.
-                while len(result) > 1 and cost > max(0, 4096 - ex.token_count):
+                while len(result) > 1 and cost > max(0, MEMORY_TURN_BUDGET - ex.token_count):
                     result.pop()
                     cost = await tokenize(canonical(result))
                     current(ex, generation)
-            if cost > max(0, 4096 - ex.token_count):
+            if cost > max(0, MEMORY_TURN_BUDGET - ex.token_count):
                 result = {'error': 'Memory budget reached for this turn. Ask a narrower question in a new turn.'}
             elif result:
                 ex.token_count += cost
