@@ -1,5 +1,16 @@
 # Heretic local setup
 
+## Quick access — preferred Heretic link
+
+**[Open Heretic](http://desktop-7ov7vat:8080/)**
+
+This is Yazeed's preferred phone/chat URL, confirmed on 2026-10-30. Keep
+Tailscale connected on the phone and PC, and Heretic running on the PC.
+When asked to open or access Heretic, provide this clickable link first.
+A failed assistant-side remote-control connection does not establish that the
+phone cannot open this URL. Opening the link and remotely starting/installing
+the model are separate operations.
+
 Private recovery repository for the Windows PC's GPU model, 65,536-token context,
 eight existing MCP tools, five local memory/knowledge tools, private Tailscale phone access,
 and video downloads.
