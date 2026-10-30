@@ -22,3 +22,11 @@ Publication checkpoint — supersedes pending publication above:
 - State: implemented, focused tests passed, pushed; NOT merged and NOT installed. Main remains `c8c6889fa7efba65d7764d21371452821ab04510` at publication.
 - Next: merge the reviewable PR, then run the installer on the desktop once remote execution access is restored (or locally on the PC). No live access or Node version on the PC has been verified.
 - Agent tasks are complete; no active resource locks. Root owns handoff. Local fetched README/web-tools/other launcher snapshots were reference material and are not included in this PR.
+
+Latest checkpoint — user-authorized merge:
+PR #6 was merged into main and read back as merged/closed. Merge commit:
+`a426b7ca0d69c2171271c44e2eff84ebb2f1563f`.
+No source changes or new tests were needed for merge. Validation above remains applicable.
+State: implemented, tested, pushed and merged; NOT installed on the PC.
+Next: restore desktop execution access, compare installed source and run
+`runtime/Install-Filesystem.ps1` as described in `docs/filesystem-mcp.md`.
