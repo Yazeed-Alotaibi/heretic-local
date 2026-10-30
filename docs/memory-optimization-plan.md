@@ -64,3 +64,14 @@ memory_selection.py into installed gateway/heretic_gateway; include the already-
 knowledge.py from PR4 if not yet installed. No dependency/UI/model change is required.
 Restart with Open-Heretic.ps1, refresh browser, test recall and a follow-up tool read.
 Rollback by restoring the previous app.py and any other replaced files while stopped.
+
+
+Latest checkpoint — 2026-10-30 (supersedes publication state above):
+User authorized merge and push. PR #5 is merged into GitHub main and merge status
+was read back and verified. Merge commit:67dec644513f2e8947fd07f53f17f180a1c7f2a0.
+Tested source commit:49eed7f620132df6f0fb5ffdfb1978b87768bd57 (83 passed,1 skipped).
+PR:https://github.com/Yazeed-Alotaibi/heretic-local/pull/5
+No source changes since validation; only this documentation checkpoint follows merge.
+No live installation performed. Next action: obtain working desktop execution access,
+compare installed source, back up files and install the combined changes as described
+above. Previous runtime access limitations remain unresolved; merging is not deployment.
