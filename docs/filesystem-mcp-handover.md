@@ -30,3 +30,12 @@ No source changes or new tests were needed for merge. Validation above remains a
 State: implemented, tested, pushed and merged; NOT installed on the PC.
 Next: restore desktop execution access, compare installed source and run
 `runtime/Install-Filesystem.ps1` as described in `docs/filesystem-mcp.md`.
+
+Important access preference — 2026-10-30:
+User explicitly asked to remember and record the preferred Heretic URL:
+http://desktop-7ov7vat:8080/
+README now places a clickable Open Heretic link at the top. For future access
+requests, give this link first. It requires the user's Tailscale connection and
+a running PC service. Assistant-side HTTP503/Desktop Commander failure is an
+access limitation of this session, not proof that the user's phone link fails.
+This documentation update does not start the model or install merged changes.
