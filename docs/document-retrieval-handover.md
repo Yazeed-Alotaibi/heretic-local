@@ -35,7 +35,11 @@ gain on the user's documents has been measured. Full-index rebuild on writes
 trades import/delete cost for simple atomic reload behavior; future tuning can
 use a larger real corpus. Existing preference-budget behavior is outside this scope.
 
-State: implemented and verified for review; no merge or live installation performed.
+State: implemented, locally tested, pushed and verified in draft PR #4:
+https://github.com/Yazeed-Alotaibi/heretic-local/pull/4
+Published source commit: 6e2815a685941bae86b0ab0d3fdf1bf1f0debb0a.
+The four published Python/test files were read back and exactly matched the tested files.
+No merge or live installation performed.
 Local workspace is an isolated gateway-only Git snapshot, not a full clone. Remote
 publication uses the full original tree and changes only the listed Python/test/docs
 files. Main, UI, launchers, model weights and personal documents are preserved.

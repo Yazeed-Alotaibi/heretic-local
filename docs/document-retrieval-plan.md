@@ -24,8 +24,9 @@ Plan:
       and real gateway tool dispatch. Watch them fail before implementation.
 - [x] Implement index and chunk addressing; update tool schema and injected references.
 - [x] Run full gateway tests and review diff; record platform limitations.
-- [ ] Publish a feature branch and draft PR; verify published content. Do not merge/deploy.
+- [x] Publish a feature branch and draft PR; verify published content. Do not merge/deploy.
 
 Status: implementation and independent review complete; 77 tests passed, 1 Windows-only
-test skipped. Publication is the next action; handover records final scope and limits.
+test skipped. Published and verified: draft PR #4 (https://github.com/Yazeed-Alotaibi/heretic-local/pull/4),
+source commit 6e2815a685941bae86b0ab0d3fdf1bf1f0debb0a; handover records scope and limits.
 No changes to the running PC. Desktop connection unavailable; user can open the UI via Tailscale.
