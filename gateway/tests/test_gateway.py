@@ -732,3 +732,101 @@ def test_gpu_usage_reports_unavailable_without_details(tmp_path):
         client.headers['X-Heretic-Session'] = client.get('/api/heretic/session').json()['token']
         assert client.get('/api/heretic/gpu').json() == {'available': False, 'gpus': []}
 
+
+def test_filesystem_discovery_and_completion_hide_unapproved_tools(gateway):
+    client, app, requests = gateway
+    names = ['filesystem_read_text_file', 'filesystem_list_directory', 'filesystem_search_files',
+             'filesystem_get_file_info', 'filesystem_list_allowed_directories',
+             'filesystem_write_file', 'filesystem_read_multiple_files', 'filesystem_future_tool',
+             'exa_web_search_exa']
+    definitions = [{'type': 'function', 'function': {'name': name, 'parameters': {'type': 'object'}}}
+                   for name in names]
+    original = app.state.client._transport.handler
+
+    def upstream(request):
+        if request.url.path == '/tools' and request.method == 'GET':
+            return httpx.Response(200, json=[{'tool': name, 'definition': definition}
+                for name, definition in zip(names, definitions)])
+        return original(request)
+
+    app.state.client._transport.handler = upstream
+    advertised = {tool['tool'] for tool in client.get('/tools').json()}
+    assert set(names[:5]) <= advertised
+    assert not set(names[5:8]) & advertised
+    assert {'exa_web_search_exa', 'knowledge_read'} <= advertised
+
+    token = begin(client, memory=False)
+    response = client.post('/v1/chat/completions', headers={'X-Heretic-Execution': token}, json={
+        'messages': [{'role': 'user', 'content': 'hello'}], 'tools': definitions})
+    assert response.status_code == 200
+    sent = next(data['tools'] for path, data in requests if path == '/v1/chat/completions')
+    assert [tool['function']['name'] for tool in sent] == names[:5] + ['exa_web_search_exa']
+
+
+def test_filesystem_model_emitted_unapproved_calls_cannot_dispatch(gateway):
+    client, app, requests = gateway
+    token = begin(client, memory=False)
+    original = app.state.client._transport.handler
+    current_tool = ['filesystem_write_file']
+
+    def upstream(request):
+        response = original(request)
+        if request.url.path == '/v1/chat/completions':
+            result = response.json()
+            result['choices'][0]['message']['tool_calls'][0]['function'] = {
+                'name': current_tool[0], 'arguments': '{"path":"notes.txt"}'}
+            return httpx.Response(200, json=result)
+        return response
+
+    app.state.client._transport.handler = upstream
+    for name in ['filesystem_write_file', 'filesystem_read_multiple_files', 'filesystem_future_tool']:
+        current_tool[0] = name
+        assert generate(client, token).status_code == 200
+        response = client.post('/tools', json={'execution_token': token, 'tool_call_id': 'call-1',
+            'tool': name, 'params': {'path': 'notes.txt'}})
+        assert response.status_code == 403
+        assert 'not enabled' in response.json()['detail']
+    assert not [r for r in requests if r[0] == '/tools']
+
+
+def test_filesystem_read_marks_private_before_dispatch_with_memory_off(gateway):
+    client, app, requests = gateway
+    token = begin(client, memory=False)
+    original = app.state.client._transport.handler
+    file_mode = [True]
+
+    def upstream(request):
+        response = original(request)
+        if request.url.path == '/v1/chat/completions' and file_mode[0]:
+            result = response.json()
+            result['choices'][0]['message']['tool_calls'][0]['function'] = {
+                'name': 'filesystem_read_text_file', 'arguments': '{"path":"notes.txt","head":10}'}
+            return httpx.Response(200, json=result)
+        if request.url.path == '/tools' and request.method == 'POST':
+            assert app.state.capabilities.executions[token].private_context
+            return httpx.Response(200, json={'content': 'personal note'})
+        return response
+
+    app.state.client._transport.handler = upstream
+    assert generate(client, token).status_code == 200
+    invocation = {'execution_token': token, 'tool_call_id': 'call-1',
+                  'tool': 'filesystem_read_text_file', 'params': {'path': 'notes.txt', 'head': 10}}
+    assert client.post('/tools', json=invocation).json() == {'content': 'personal note'}
+    assert client.post('/tools', json=invocation).status_code == 200
+    assert len([r for r in requests if r[0] == '/tools']) == 1
+    # Repeated reads still work after privacy was set, without an external approval.
+    assert generate(client, token).status_code == 200
+    assert client.post('/tools', json=invocation).status_code == 200
+    assert len([r for r in requests if r[0] == '/tools']) == 2
+
+    file_mode[0] = False
+    assert generate(client, token).status_code == 200
+    assert invoke(client, token).json()['detail']['code'] == 'approval_required'
+    assert len([r for r in requests if r[0] == '/tools']) == 2
+    # The conversation retains the private-file flag across new memory-off turns.
+    next_token = begin(client, memory=False, assistant='next')
+    assert app.state.capabilities.executions[next_token].private_context
+    assert generate(client, next_token).status_code == 200
+    assert invoke(client, next_token).json()['detail']['code'] == 'approval_required'
+    assert len([r for r in requests if r[0] == '/tools']) == 2
+

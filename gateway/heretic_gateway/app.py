@@ -27,6 +27,18 @@ MEMORY_TURN_BUDGET = 4096
 MEMORY_TOOL_RESERVE = 1536
 MEMORY_PREFERENCE_BUDGET = 512
 
+# The engine hosts this local MCP, but the gateway limits its public capabilities.
+# Keep it separate from LOCAL_TOOLS: file access is independent of memory mode.
+FILESYSTEM_READ_TOOLS = frozenset({
+    'filesystem_read_text_file', 'filesystem_list_directory', 'filesystem_search_files',
+    'filesystem_get_file_info', 'filesystem_list_allowed_directories',
+})
+
+
+def blocked_filesystem_tool(name):
+    return isinstance(name, str) and name.startswith('filesystem_') and name not in FILESYSTEM_READ_TOOLS
+
+
 ORIGINS = {
     'http://127.0.0.1:8080', 'http://localhost:8080',
     'http://desktop-7ov7vat.tail4c4266.ts.net:8080', 'http://desktop-7ov7vat:8080',
@@ -520,7 +532,9 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
     async def tools_list():
         response = await app.state.client.get('/tools')
         response.raise_for_status()
-        result = response.json()
+        result = [tool for tool in response.json()
+                  if not blocked_filesystem_tool(tool.get('tool'))
+                  and not blocked_filesystem_tool(tool.get('definition', {}).get('function', {}).get('name'))]
         for name, (description, properties, required) in LOCAL_TOOLS.items():
             result.append({'tool': name, 'definition': {'type': 'function', 'function': {
                 'name': name, 'description': description,
@@ -607,6 +621,8 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
             raise HTTPException(403, 'Tool invocation belongs to an earlier generation.')
         if not call or call['tool'] != data.get('tool') or canonical(call['params']) != canonical(data.get('params')):
             raise HTTPException(403, 'Tool invocation does not match this model execution.')
+        if blocked_filesystem_tool(call['tool']):
+            raise HTTPException(403, 'This filesystem tool is not enabled; only selected read/search tools are available.')
         if call['status'] == 'complete':
             return JSONResponse(call['result'], status_code=call.get('status_code', 200))
         if call['status'] in {'running', 'unknown'}:
@@ -614,7 +630,8 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
         if call['status'] == 'denied':
             return {'error': 'User declined this external request.'}
         name, params = call['tool'], call['params']
-        if name not in LOCAL_TOOLS and ex.private_context:
+        filesystem_read = name in FILESYSTEM_READ_TOOLS
+        if name not in LOCAL_TOOLS and not filesystem_read and ex.private_context:
             if call['status'] in {'approved', 'pending'} and not approval_matches(ex, call, call.get('approval_id')):
                 call['status'] = 'new'
             if call['status'] not in {'approved', 'pending'}:
@@ -634,9 +651,13 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
                 result = await local_tool(ex, name, params, generation)
                 code = 200
             else:
-                if ex.private_context and (not approval_matches(ex, call, call.get('approval_id'))
+                if not filesystem_read and ex.private_context and (not approval_matches(ex, call, call.get('approval_id'))
                         or state.approvals[call['approval_id']]['approved'] is not True):
                     raise HTTPException(409, 'Approval does not match this model invocation.')
+                if filesystem_read:
+                    # Paths, metadata and errors can contain personal information too.
+                    # Mark before awaiting so concurrent/future external calls are gated.
+                    mark_private(ex)
                 response = await app.state.client.post('/tools', json={'tool': name, 'params': params})
                 current(ex, generation)
                 result, code = response.json(), response.status_code
@@ -682,6 +703,9 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
             blocks = await snapshot(ex)
             current(ex)
             payload['messages'] = ([blocks[0]] if blocks else []) + messages[:last_user] + blocks[1:] + messages[last_user:]
+            if payload.get('tools'):
+                payload['tools'] = [t for t in payload['tools']
+                                    if not blocked_filesystem_tool(t.get('function', {}).get('name'))]
             if not ex.memory_enabled:
                 payload['tools'] = [t for t in payload.get('tools', [])
                                     if t.get('function', {}).get('name') not in LOCAL_TOOLS]
