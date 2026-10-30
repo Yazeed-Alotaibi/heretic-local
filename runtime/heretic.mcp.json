@@ -36,6 +36,15 @@
         "MCPORTER_CONFIG": "C:\\Users\\PC\\.agent-reach\\heretic-backend\\mcporter.json",
         "PATH": "C:\\Users\\PC\\.agent-reach\\heretic-backend\\.venv\\Scripts;C:\\Users\\PC\\.agent-reach\\heretic-backend\\node-tools\\node_modules\\.bin;C:\\Program Files\\nodejs;C:\\Windows\\System32;C:\\Windows;C:\\Users\\PC\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0-full_build\\bin"
       }
+    },
+    "filesystem": {
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "cwd": "C:\\Users\\PC\\OneDrive\\Documents\\ChatGPT\\chats with no projects\\ternary-bonsai-runtime",
+      "timeout_ms": 30000,
+      "args": [
+        "C:\\Users\\PC\\OneDrive\\Documents\\ChatGPT\\chats with no projects\\ternary-bonsai-runtime\\filesystem-tools\\node_modules\\@modelcontextprotocol\\server-filesystem\\dist\\index.js",
+        "C:\\Users\\PC\\.heretic\\files"
+      ]
     }
   }
 }

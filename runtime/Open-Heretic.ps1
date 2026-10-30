@@ -53,11 +53,18 @@ try {
     if ($runningContext -notin $allowedContexts) { throw "The running model has an unsupported $runningContext-token context; it was left running." }
     $tools = Invoke-RestMethod 'http://127.0.0.1:8080/tools' -TimeoutSec 15
     $expected = @('exa_web_search_exa', 'exa_web_fetch_exa', 'reach_backends_read_webpage', 'reach_backends_search_github_repositories', 'reach_backends_get_agent_reach_status', 'reach_backends_search_youtube', 'reach_backends_read_youtube_video', 'media_download_video', 'memory_search', 'memory_read', 'memory_propose', 'knowledge_search', 'knowledge_read')
+    $mcpPath = Join-Path $runtimeDir 'heretic.mcp.json'
+    if (Test-Path -LiteralPath $mcpPath -PathType Leaf) {
+        $mcpConfig = Get-Content -LiteralPath $mcpPath -Raw | ConvertFrom-Json
+        if ($mcpConfig.mcpServers.filesystem) {
+            $expected += @('filesystem_read_text_file', 'filesystem_list_directory', 'filesystem_search_files', 'filesystem_get_file_info', 'filesystem_list_allowed_directories')
+        }
+    }
     foreach ($toolName in $expected) {
         if ($toolName -notin $tools.tool) { throw "Saved tool is missing: $toolName. The running chat was left intact." }
     }
     if ($ContextSize) { [string]$ContextSize | Set-Content -LiteralPath $contextFile }
-    "$(Get-Date -Format o) READY: gateway, $($runningContext / 1024)k context, thirteen tools, memory, file service." | Set-Content -LiteralPath $logFile
+    "$(Get-Date -Format o) READY: gateway, $($runningContext / 1024)k context, $(@($tools).Count) tools, memory, file service." | Set-Content -LiteralPath $logFile
     if (-not $NoBrowser) { Start-Process 'http://desktop-7ov7vat.tail4c4266.ts.net:8080/' }
 } catch {
     "$(Get-Date -Format o) ERROR: $($_.Exception.Message)" | Set-Content -LiteralPath $logFile
@@ -66,3 +73,4 @@ try {
     if ($hasLock) { $mutex.ReleaseMutex() }
     $mutex.Dispose()
 }
+
