@@ -118,7 +118,7 @@ try {
     if (-not $gatewayListener -or @($gatewayListener | Where-Object { $_.OwningProcess -notin $ownedIds }).Count) { throw 'Gateway listener is not a validated owned process; records were preserved.' }
     $gatewayRecord.EffectivePid = $gatewayListener[0].OwningProcess
     Save-OwnedRecords
-    $serverArgs = @('-m', $modelFile, '--host', '127.0.0.1', '--port', '8081', '-ngl', '99', '-c', [string]$ContextSize, '-np', '1', '-fa', 'on', '--fit', 'off', '--reasoning-preserve', '--cors-origins', 'http://127.0.0.1:8080,http://localhost:8080,http://desktop-7ov7vat.tail4c4266.ts.net:8080,http://desktop-7ov7vat:8080')
+    $serverArgs = @('-m', $modelFile, '--host', '127.0.0.1', '--port', '8081', '-ngl', '99', '-c', [string]$ContextSize, '-np', '1', '-fa', 'on', '--fit', 'off', '--reasoning-preserve', '--temp', '0.7', '--top-p', '0.9', '--cors-origins', 'http://127.0.0.1:8080,http://localhost:8080,http://desktop-7ov7vat.tail4c4266.ts.net:8080,http://desktop-7ov7vat:8080')
     if ($ContextSize -ge 65536) { $serverArgs += @('-ctk', 'q8_0', '-ctv', 'q8_0') }
     $serverArgs += @('--mcp-servers-config', $mcpFile)
     $model = Start-OwnedProcess 'model' $serverExe @($serverArgs | ForEach-Object { '"' + $_ + '"' }) (Join-Path $runtimeDir 'bin')

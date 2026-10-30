@@ -33,10 +33,39 @@ FILESYSTEM_READ_TOOLS = frozenset({
     'filesystem_read_text_file', 'filesystem_list_directory', 'filesystem_search_files',
     'filesystem_get_file_info', 'filesystem_list_allowed_directories',
 })
+# Writes stay inside the server's allowed folder and always need a per-call user approval.
+# Moves, bulk reads and future tools remain blocked.
+FILESYSTEM_WRITE_TOOLS = frozenset({
+    'filesystem_write_file', 'filesystem_edit_file', 'filesystem_create_directory',
+})
 
 
 def blocked_filesystem_tool(name):
-    return isinstance(name, str) and name.startswith('filesystem_') and name not in FILESYSTEM_READ_TOOLS
+    return (isinstance(name, str) and name.startswith('filesystem_')
+            and name not in FILESYSTEM_READ_TOOLS and name not in FILESYSTEM_WRITE_TOOLS)
+
+
+INSTRUCTIONS = (
+    "You are Heretic, a private assistant running locally on the user's own PC. "
+    'If asked who or what you are, say you are Heretic running locally; do not claim to be '
+    'another assistant or product. '
+    "Reply in the language of the user's latest message (Arabic for Arabic, English for English). "
+    'Be short and direct by default; give long, detailed answers only when the user asks. '
+    'Only use or mention tools that are provided in this request; if none are provided, say '
+    'you have no tools in this chat. Never invent tool results, files, sources or abilities, '
+    'and say plainly when you are unsure or do not know.')
+
+
+def with_instructions(messages: list) -> list:
+    """Prepend Heretic's default instructions, keeping a single leading system message."""
+    first = messages[0] if messages else None
+    if isinstance(first, dict) and first.get('role') == 'system':
+        content = first.get('content')
+        if isinstance(content, str):
+            return [dict(first, content=INSTRUCTIONS + '\n\n' + content)] + messages[1:]
+        if isinstance(content, list):
+            return [dict(first, content=[{'type': 'text', 'text': INSTRUCTIONS}] + content)] + messages[1:]
+    return [{'role': 'system', 'content': INSTRUCTIONS}] + messages
 
 
 ORIGINS = {
@@ -622,7 +651,7 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
         if not call or call['tool'] != data.get('tool') or canonical(call['params']) != canonical(data.get('params')):
             raise HTTPException(403, 'Tool invocation does not match this model execution.')
         if blocked_filesystem_tool(call['tool']):
-            raise HTTPException(403, 'This filesystem tool is not enabled; only selected read/search tools are available.')
+            raise HTTPException(403, 'This filesystem tool is not enabled; only selected read/search/write tools are available.')
         if call['status'] == 'complete':
             return JSONResponse(call['result'], status_code=call.get('status_code', 200))
         if call['status'] in {'running', 'unknown'}:
@@ -631,7 +660,10 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
             return {'error': 'User declined this external request.'}
         name, params = call['tool'], call['params']
         filesystem_read = name in FILESYSTEM_READ_TOOLS
-        if name not in LOCAL_TOOLS and not filesystem_read and ex.private_context:
+        filesystem_write = name in FILESYSTEM_WRITE_TOOLS
+        needs_approval = filesystem_write or (
+            name not in LOCAL_TOOLS and not filesystem_read and ex.private_context)
+        if needs_approval:
             if call['status'] in {'approved', 'pending'} and not approval_matches(ex, call, call.get('approval_id')):
                 call['status'] = 'new'
             if call['status'] not in {'approved', 'pending'}:
@@ -651,10 +683,10 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
                 result = await local_tool(ex, name, params, generation)
                 code = 200
             else:
-                if not filesystem_read and ex.private_context and (not approval_matches(ex, call, call.get('approval_id'))
+                if needs_approval and (not approval_matches(ex, call, call.get('approval_id'))
                         or state.approvals[call['approval_id']]['approved'] is not True):
                     raise HTTPException(409, 'Approval does not match this model invocation.')
-                if filesystem_read:
+                if filesystem_read or filesystem_write:
                     # Paths, metadata and errors can contain personal information too.
                     # Mark before awaiting so concurrent/future external calls are gated.
                     mark_private(ex)
@@ -711,6 +743,8 @@ def create_app(data_root: Path | None = None, model_url: str = 'http://127.0.0.1
                                     if t.get('function', {}).get('name') not in LOCAL_TOOLS]
         elif payload.get('tools'):
             raise HTTPException(403, 'An execution token is required for tool-enabled requests.')
+        if isinstance(payload.get('messages'), list):
+            payload['messages'] = with_instructions(payload['messages'])
         headers = {}
         if ex:
             client_id = request.headers.get('x-conversation-id', ex.conversation_id)

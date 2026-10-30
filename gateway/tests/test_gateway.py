@@ -737,8 +737,8 @@ def test_filesystem_discovery_and_completion_hide_unapproved_tools(gateway):
     client, app, requests = gateway
     names = ['filesystem_read_text_file', 'filesystem_list_directory', 'filesystem_search_files',
              'filesystem_get_file_info', 'filesystem_list_allowed_directories',
-             'filesystem_write_file', 'filesystem_read_multiple_files', 'filesystem_future_tool',
-             'exa_web_search_exa']
+             'filesystem_write_file', 'filesystem_move_file', 'filesystem_read_multiple_files',
+             'filesystem_future_tool', 'exa_web_search_exa']
     definitions = [{'type': 'function', 'function': {'name': name, 'parameters': {'type': 'object'}}}
                    for name in names]
     original = app.state.client._transport.handler
@@ -751,8 +751,8 @@ def test_filesystem_discovery_and_completion_hide_unapproved_tools(gateway):
 
     app.state.client._transport.handler = upstream
     advertised = {tool['tool'] for tool in client.get('/tools').json()}
-    assert set(names[:5]) <= advertised
-    assert not set(names[5:8]) & advertised
+    assert set(names[:6]) <= advertised
+    assert not set(names[6:9]) & advertised
     assert {'exa_web_search_exa', 'knowledge_read'} <= advertised
 
     token = begin(client, memory=False)
@@ -760,14 +760,14 @@ def test_filesystem_discovery_and_completion_hide_unapproved_tools(gateway):
         'messages': [{'role': 'user', 'content': 'hello'}], 'tools': definitions})
     assert response.status_code == 200
     sent = next(data['tools'] for path, data in requests if path == '/v1/chat/completions')
-    assert [tool['function']['name'] for tool in sent] == names[:5] + ['exa_web_search_exa']
+    assert [tool['function']['name'] for tool in sent] == names[:6] + ['exa_web_search_exa']
 
 
 def test_filesystem_model_emitted_unapproved_calls_cannot_dispatch(gateway):
     client, app, requests = gateway
     token = begin(client, memory=False)
     original = app.state.client._transport.handler
-    current_tool = ['filesystem_write_file']
+    current_tool = ['filesystem_move_file']
 
     def upstream(request):
         response = original(request)
@@ -779,7 +779,7 @@ def test_filesystem_model_emitted_unapproved_calls_cannot_dispatch(gateway):
         return response
 
     app.state.client._transport.handler = upstream
-    for name in ['filesystem_write_file', 'filesystem_read_multiple_files', 'filesystem_future_tool']:
+    for name in ['filesystem_move_file', 'filesystem_read_multiple_files', 'filesystem_future_tool']:
         current_tool[0] = name
         assert generate(client, token).status_code == 200
         response = client.post('/tools', json={'execution_token': token, 'tool_call_id': 'call-1',
@@ -787,6 +787,65 @@ def test_filesystem_model_emitted_unapproved_calls_cannot_dispatch(gateway):
         assert response.status_code == 403
         assert 'not enabled' in response.json()['detail']
     assert not [r for r in requests if r[0] == '/tools']
+
+
+def test_filesystem_write_requires_approval_for_every_invocation(gateway):
+    client, app, requests = gateway
+    token = begin(client, memory=False)
+    original = app.state.client._transport.handler
+    arguments = {'path': 'notes.txt', 'content': 'hi'}
+
+    def upstream(request):
+        response = original(request)
+        if request.url.path == '/v1/chat/completions':
+            result = response.json()
+            result['choices'][0]['message']['tool_calls'][0]['function'] = {
+                'name': 'filesystem_write_file', 'arguments': json.dumps(arguments)}
+            return httpx.Response(200, json=result)
+        if request.url.path == '/tools' and request.method == 'POST':
+            assert app.state.capabilities.executions[token].private_context
+            return httpx.Response(200, json={'content': 'written'})
+        return response
+
+    app.state.client._transport.handler = upstream
+    invocation = {'execution_token': token, 'tool_call_id': 'call-1',
+                  'tool': 'filesystem_write_file', 'params': arguments}
+    # Writes are gated even when the conversation has no private context.
+    assert not app.state.capabilities.executions[token].private_context
+    assert generate(client, token).status_code == 200
+    pending = client.post('/tools', json=invocation)
+    assert pending.json()['detail']['code'] == 'approval_required'
+    denied = pending.json()['detail']['approval_id']
+    assert client.post('/api/heretic/approvals/' + denied, json={'approve': False}).status_code == 200
+    assert client.post('/tools', json=invocation).json() == {'error': 'User declined this external request.'}
+    assert not [r for r in requests if r[0] == '/tools']
+
+    # A new model turn needs a fresh approval; an approved write dispatches exactly once.
+    assert generate(client, token).status_code == 200
+    approval = client.post('/tools', json=invocation).json()['detail']['approval_id']
+    assert approval != denied
+    assert client.post('/api/heretic/approvals/' + approval, json={'approve': True}).status_code == 200
+    assert client.post('/tools', json=invocation).json() == {'content': 'written'}
+    assert client.post('/tools', json=invocation).json() == {'content': 'written'}
+    assert len([r for r in requests if r[0] == '/tools']) == 1
+
+
+@pytest.mark.parametrize('messages,expected', [
+    ([{'role': 'user', 'content': 'hi'}], ['system', 'user']),
+    ([{'role': 'system', 'content': 'Custom.'}, {'role': 'user', 'content': 'hi'}], ['system', 'user']),
+    ([{'role': 'system', 'content': [{'type': 'text', 'text': 'Custom.'}]},
+      {'role': 'user', 'content': 'hi'}], ['system', 'user']),
+])
+def test_instructions_are_prepended_to_a_single_system_message(gateway, messages, expected):
+    client, _app, requests = gateway
+    assert client.post('/v1/chat/completions', json={'messages': messages}).status_code == 200
+    sent = next(data['messages'] for path, data in requests if path == '/v1/chat/completions')
+    assert [message['role'] for message in sent] == expected
+    system = sent[0]['content']
+    text = system if isinstance(system, str) else ' '.join(part['text'] for part in system)
+    assert text.startswith('You are Heretic')
+    if messages[0]['role'] == 'system':
+        assert 'Custom.' in text
 
 
 def test_filesystem_read_marks_private_before_dispatch_with_memory_off(gateway):

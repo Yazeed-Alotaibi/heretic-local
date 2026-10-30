@@ -4,12 +4,15 @@ Adds the official `@modelcontextprotocol/server-filesystem` pinned to **2.1.0**.
 Requires **Node.js 24+**. The default folder is `%USERPROFILE%\.heretic\files`;
 it is outside the repository and OneDrive. Put files you want Heretic to read there.
 
-Heretic exposes five tools: `filesystem_list_allowed_directories`,
+Heretic exposes five read tools: `filesystem_list_allowed_directories`,
 `filesystem_list_directory`, `filesystem_search_files`, `filesystem_get_file_info`,
-and `filesystem_read_text_file`. Writes, moves, deletes, bulk reads, and all other
-filesystem tools are blocked by the gateway. The official upstream server itself
-has write capabilities; this read-only policy is enforced by Heretic's gateway,
-not by a nonexistent server `--read-only` flag. Keep the engine on loopback 8081.
+and `filesystem_read_text_file`, plus three write tools: `filesystem_write_file`,
+`filesystem_edit_file` and `filesystem_create_directory`. Every write call shows
+the exact path and content in the approval dialog and runs only after you approve
+that single call; a denied or new model turn needs a fresh approval. Writes stay
+inside the allowed folder (enforced by the server). Moves, bulk reads and all other
+filesystem tools are blocked by the gateway. This policy is enforced by Heretic's
+gateway, not by a server flag. Keep the engine on loopback 8081.
 
 File paths and results mark the conversation private, even with memory off.
 Subsequent web/other external tools use Heretic's existing approval dialog. Local

@@ -11,6 +11,28 @@
         "--silent"
       ]
     },
+    "context7": {
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "timeout_ms": 45000,
+      "args": [
+        "C:\\Users\\PC\\OneDrive\\Documents\\ChatGPT\\chats with no projects\\ternary-bonsai-runtime\\web-tools\\node_modules\\mcp-remote\\dist\\proxy.js",
+        "https://mcp.context7.com/mcp",
+        "--transport",
+        "http-only",
+        "--silent"
+      ]
+    },
+    "huggingface": {
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "timeout_ms": 45000,
+      "args": [
+        "C:\\Users\\PC\\OneDrive\\Documents\\ChatGPT\\chats with no projects\\ternary-bonsai-runtime\\web-tools\\node_modules\\mcp-remote\\dist\\proxy.js",
+        "https://huggingface.co/mcp",
+        "--transport",
+        "http-only",
+        "--silent"
+      ]
+    },
     "reach_backends": {
       "command": "C:\\Users\\PC\\.agent-reach\\heretic-backend\\.venv\\Scripts\\python.exe",
       "cwd": "C:\\Users\\PC\\.agent-reach\\heretic-backend",
