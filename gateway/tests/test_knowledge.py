@@ -34,6 +34,67 @@ def test_unicode_scope_reload_and_delete(tmp_path):
     assert not (store.root / document["id"]).exists()
 
 
+def test_search_hit_can_be_read_after_twentieth_chunk_and_reload(tmp_path):
+    store = Knowledge(tmp_path)
+    doc = store.import_document('long.txt', ('background ' * 5000 + '\n\nrareanchor conclusion').encode())
+    hit = store.search('rareanchor')[0]
+    assert hit['chunk_index'] > 20
+    store.reload()
+    result = store.read(doc['id'], start_chunk=hit['chunk_index'], max_chunks=1)
+    assert 'rareanchor' in result['text']
+    assert result['chunks'][0]['chunk_index'] == hit['chunk_index']
+    assert result['source'] == hit['source']
+    assert result['next_chunk'] is None
+    assert result['total_chunks'] > 20
+    first = store.read(doc['id'], start_chunk=0, max_chunks=1)
+    assert first['next_chunk'] == 1
+    assert first['truncated'] is True
+
+
+@pytest.mark.parametrize('start,count', [(-1, 1), (True, 1), (0, 0), (0, 21), (0, '1')])
+def test_chunk_read_rejects_invalid_ranges(tmp_path, start, count):
+    store = Knowledge(tmp_path)
+    doc = store.import_document('notes.txt', b'notes')
+    with pytest.raises(ValueError):
+        store.read(doc['id'], start_chunk=start, max_chunks=count)
+
+
+def test_chunk_read_scope_and_out_of_range(tmp_path):
+    store = Knowledge(tmp_path)
+    project = str(uuid.uuid4())
+    doc = store.import_document('private.txt', b'secret marker', scope=project)
+    with pytest.raises(KeyError):
+        store.read(doc['id'], start_chunk=0, max_chunks=1)
+    with pytest.raises(ValueError):
+        store.read(doc['id'], scope=project, start_chunk=99)
+
+
+def test_search_ranks_relevant_passage_above_long_keyword_padding(tmp_path):
+    store = Knowledge(tmp_path)
+    store.import_document('padding.txt', ('delay ' + 'background ' * 150).encode())
+    best = store.import_document('answer.txt', b'delay mitigation plan')
+    assert store.search('delay')[0]['document_id'] == best['id']
+    assert store.search('delay OR " * (')[0]['document_id'] == best['id']
+    store.delete(best['id'])
+    assert all(hit['document_id'] != best['id'] for hit in store.search('delay'))
+
+
+def test_new_chunks_prefer_paragraph_boundaries_without_losing_text(tmp_path):
+    store = Knowledge(tmp_path)
+    text = 'a' * 1850 + '\n\n' + 'b' * 500
+    doc = store.import_document('paragraphs.txt', text.encode())
+    chunks = store.read(doc['id'])['chunks']
+    assert chunks[0]['text'] == 'a' * 1850 + '\n\n'
+    assert ''.join(c['text'] for c in chunks) == text
+
+
+def test_long_question_does_not_drop_relevant_query_terms(tmp_path):
+    store = Knowledge(tmp_path)
+    doc = store.import_document('answer.txt', b'zenith answer')
+    question = ' '.join('a%02d' % i for i in range(64)) + ' zenith'
+    assert store.search(question)[0]['id'] == doc['id']
+
+
 def test_upload_and_text_limits(tmp_path, monkeypatch):
     store = Knowledge(tmp_path)
     monkeypatch.setattr(knowledge, "MAX_BYTES", 10)
@@ -169,3 +230,4 @@ def test_windows_job_hard_memory_cap():
         if process.poll() is None:
             process.kill()
         process.wait()
+

@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -18,6 +19,21 @@ MAX_BYTES = 25 * 1024 * 1024
 MAX_CHARS = 5_000_000
 PDF_TIMEOUT = 60
 MEMORY_LIMIT = 512 * 1024 * 1024
+
+
+def _chunks(text):
+    """Keep text intact; prefer paragraph, line, then word boundaries near the limit."""
+    start = 0
+    while start < len(text):
+        end = min(start + 2000, len(text))
+        if end < len(text):
+            for separator in ('\n\n', '\n', ' '):
+                boundary = text.rfind(separator, start + 1800, end)
+                if boundary >= 0:
+                    end = boundary + len(separator)
+                    break
+        yield text[start:end]
+        start = end
 
 
 def _scope(scope):
@@ -149,7 +165,31 @@ class Knowledge:
 
     def install_reload(self, snapshot):
         with self._lock:
-            self._documents = snapshot
+            index = self._build_index(snapshot)
+            self._swap(snapshot, index)
+
+    @staticmethod
+    def _build_index(documents):
+        index = sqlite3.connect(':memory:', check_same_thread=False)
+        try:
+            index.execute('CREATE VIRTUAL TABLE passages USING fts5(text, document_id UNINDEXED, '
+                          'chunk_index UNINDEXED, scope UNINDEXED)')
+            index.executemany('INSERT INTO passages VALUES (?, ?, ?, ?)', (
+                (normalize(chunk['text']), doc['id'], i, doc['scope'])
+                for doc in documents.values() for i, chunk in enumerate(doc['chunks'])))
+            index.commit()
+            return index
+        except BaseException:
+            index.close()
+            raise
+
+    def _swap(self, snapshot, index):
+        # Caller holds the lock; publish documents and their matching index together.
+        previous = getattr(self, '_index', None)
+        self._index = index
+        self._documents = snapshot
+        if previous is not None:
+            previous.close()
 
     @staticmethod
     def _validate(document, folder, identifier=None):
@@ -226,21 +266,33 @@ class Knowledge:
                 raise ValueError("Document has no usable text")
             chunks = []
             section = None
-            for page in pages:
-                for start in range(0, len(page["text"]), 2000):
-                    excerpt = page["text"][start:start + 2000]
+            # Fall back to fixed cuts for unusually fragmented large documents so the
+            # existing 3,000-chunk and five-million-character limits remain unchanged.
+            excerpts = [[(excerpt, page['page']) for excerpt in _chunks(page['text'])]
+                        for page in pages]
+            if sum(map(len, excerpts)) > 3000:
+                excerpts = [[(page['text'][i:i + 2000], page['page'])
+                             for i in range(0, len(page['text']), 2000)] for page in pages]
+            for page_chunks in excerpts:
+                for excerpt, page_number in page_chunks:
                     headings = re.findall(r"(?m)^#{1,6}\s+(.+)$", excerpt) if extension == ".md" else []
                     if headings:
                         section = headings[-1]
-                    chunks.append({"text": excerpt, "page": page["page"], "section": section})
+                    chunks.append({"text": excerpt, "page": page_number, "section": section})
             document = {"schema_version": 1, "id": document_id, "document_id": document_id, "source": source,
                         "filename": source, "created_at": datetime.now(timezone.utc).isoformat(),
                         "scope": scope, "size": len(data), "chunks": chunks}
             self._validate(document, staging, document_id)
             (staging / "document.json").write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
             with self._lock:
-                staging.rename(self.root / document_id)
-                self._documents[document_id] = document
+                documents = {**self._documents, document_id: document}
+                index = self._build_index(documents)
+                try:
+                    staging.rename(self.root / document_id)
+                except BaseException:
+                    index.close()
+                    raise
+                self._swap(documents, index)
             return self._metadata(document)
         finally:
             if staging.exists():
@@ -255,36 +307,51 @@ class Knowledge:
         with self._lock:
             return [self._metadata(d) for d in self._documents.values() if d["scope"] == scope]
 
-    def read(self, document_id, scope="global"):
+    def read(self, document_id, scope="global", *, start_chunk=0, max_chunks=20):
         _scope(scope)
+        if type(start_chunk) is not int or start_chunk < 0:
+            raise ValueError('start_chunk must be a nonnegative integer')
+        if type(max_chunks) is not int or not 1 <= max_chunks <= 20:
+            raise ValueError('max_chunks must be an integer between 1 and 20')
         with self._lock:
             document = self._documents.get(document_id)
             if document is None or document["scope"] not in ("global", scope):
                 raise KeyError("Knowledge document not found")
             result = self._metadata(document)
-            result["chunks"] = [dict(c) for c in document["chunks"][:20]]
+            total = len(document['chunks'])
+            if start_chunk >= total:
+                raise ValueError('start_chunk is outside the document')
+            end = min(start_chunk + max_chunks, total)
+            result["chunks"] = [dict(document['chunks'][i], chunk_index=i)
+                                for i in range(start_chunk, end)]
             result["text"] = "\n".join(c["text"] for c in result["chunks"])
-            result["truncated"] = len(document["chunks"]) > 20
+            result['total_chunks'] = total
+            result['next_chunk'] = end if end < total else None
+            result["truncated"] = start_chunk > 0 or end < total
             return result
 
     def search(self, query, scope="global", limit=6):
         _scope(scope)
-        terms = set(re.findall(r"\w+", normalize(query[:2000])))
+        terms = list(dict.fromkeys(re.findall(r"\w+", normalize(query[:2000]))))
         if not terms:
             return []
-        results = []
+        # Quote each literal token. Model-supplied FTS operators are never executed.
+        match = ' OR '.join('"' + term.replace('"', '""') + '"' for term in terms)
         with self._lock:
-            for document in self._documents.values():
-                if document["scope"] not in ("global", scope):
-                    continue
-                for chunk in document["chunks"]:
-                    words = set(re.findall(r"\w+", normalize(chunk["text"])))
-                    score = len(terms & words)
-                    if score:
-                        results.append({"id": document["id"], "document_id": document["id"], "source": document["source"],
-                                        "page": chunk["page"], "section": chunk["section"],
-                                        "excerpt": chunk["text"], "score": score})
-        return sorted(results, key=lambda r: r["score"], reverse=True)[:max(0, min(int(limit), 20))]
+            rows = self._index.execute(
+                'SELECT document_id, chunk_index, bm25(passages) AS rank FROM passages '
+                'WHERE passages MATCH ? AND scope IN (?, ?) '
+                'ORDER BY rank, document_id, chunk_index LIMIT ?',
+                (match, 'global', scope, max(0, min(int(limit), 20)))).fetchall()
+            results = []
+            for document_id, chunk_index, rank in rows:
+                document = self._documents[document_id]
+                chunk = document['chunks'][chunk_index]
+                results.append({'id': document_id, 'document_id': document_id,
+                                'chunk_index': chunk_index, 'source': document['source'],
+                                'page': chunk['page'], 'section': chunk['section'],
+                                'excerpt': chunk['text'], 'score': -rank})
+            return results
 
     def delete(self, document_id):
         if not isinstance(document_id, str) or not re.fullmatch(r"[0-9a-f]{32}", document_id):
@@ -292,5 +359,12 @@ class Knowledge:
         with self._lock:
             if document_id not in self._documents:
                 raise KeyError("Knowledge document not found")
-            shutil.rmtree(self.root / document_id)
-            del self._documents[document_id]
+            documents = {key: doc for key, doc in self._documents.items() if key != document_id}
+            index = self._build_index(documents)
+            try:
+                shutil.rmtree(self.root / document_id)
+            except BaseException:
+                index.close()
+                raise
+            self._swap(documents, index)
+

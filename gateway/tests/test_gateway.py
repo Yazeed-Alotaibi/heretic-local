@@ -162,6 +162,84 @@ def test_document_recall_is_bounded_and_has_source(gateway):
     assert any(r['id'] == doc['id'] for r in context['records'])
 
 
+@pytest.mark.parametrize('invalid', [False, True])
+def test_knowledge_tool_reads_search_hit_and_validates_range(gateway, invalid):
+    client, app, requests = gateway
+    doc = app.state.knowledge.import_document('long.txt',
+        ('background ' * 5000 + '\n\nrareanchor conclusion').encode())
+    hit = app.state.knowledge.search('rareanchor')[0]
+    params = {'id': doc['id'], 'start_chunk': -1 if invalid else hit['chunk_index'],
+              'max_chunks': 1}
+    original = app.state.client._transport.handler
+
+    def upstream(request):
+        response = original(request)
+        if request.url.path == '/v1/chat/completions':
+            content = response.json()
+            call = content['choices'][0]['message']['tool_calls'][0]
+            call['function'] = {'name': 'knowledge_read', 'arguments': json.dumps(params)}
+            return httpx.Response(200, json=content)
+        return response
+
+    app.state.client._transport.handler = upstream
+    token = begin(client)
+    assert generate(client, token).status_code == 200
+    response = client.post('/tools', json={'execution_token': token, 'tool_call_id': 'call-1',
+        'tool': 'knowledge_read', 'params': params})
+    assert response.status_code == 200
+    result = response.json()
+    if invalid:
+        assert 'error' in result
+    else:
+        assert 'rareanchor' in result['text']
+        assert result['chunks'][0]['chunk_index'] == hit['chunk_index']
+        assert result['next_chunk'] is None
+    # The browser discovers tools through /tools and supplies them to completions.
+    tool = next(t['definition'] for t in client.get('/tools').json()
+                if t['tool'] == 'knowledge_read')
+    assert 'start_chunk' in tool['function']['parameters']['properties']
+
+
+def test_document_recall_includes_chunk_reference(gateway):
+    client, app, requests = gateway
+    doc = app.state.knowledge.import_document('manual.txt',
+        ('unrelated ' * 500 + '\n\nhello relevant passage').encode())
+    token = begin(client)
+    assert generate(client, token).status_code == 200
+    context = client.get('/api/heretic/context/' + token).json()
+    hit = next(r for r in context['records'] if r['id'] == doc['id'])
+    assert hit['chunk_index'] > 0
+    payload = [body for path, body in requests if path == '/v1/chat/completions'][-1]
+    assert 'chunk_index' in json.dumps(payload['messages'])
+
+
+def test_knowledge_search_returns_hits_that_fit_turn_budget(gateway):
+    client, app, _requests = gateway
+    for i in range(6):
+        app.state.knowledge.import_document(f'long-{i}.txt',
+            ('target ' + 'word ' * 390).encode())
+    original = app.state.client._transport.handler
+
+    def upstream(request):
+        response = original(request)
+        if request.url.path == '/v1/chat/completions':
+            content = response.json()
+            call = content['choices'][0]['message']['tool_calls'][0]
+            call['function'] = {'name': 'knowledge_search', 'arguments': '{"query":"target"}'}
+            return httpx.Response(200, json=content)
+        return response
+
+    app.state.client._transport.handler = upstream
+    token = begin(client)
+    assert generate(client, token).status_code == 200
+    response = client.post('/tools', json={'execution_token': token, 'tool_call_id': 'call-1',
+        'tool': 'knowledge_search', 'params': {'query': 'target'}})
+    hits = response.json()
+    assert isinstance(hits, list) and 0 < len(hits) < 6
+    assert 'chunk_index' in hits[0]
+    assert client.get('/api/heretic/context/' + token).json()['token_count'] <= 4096
+
+
 def test_stream_ids_are_server_owned_and_lookup_is_session_scoped(gateway):
     client, app, _requests = gateway
     original = app.state.client._transport.handler
@@ -630,3 +708,4 @@ def test_gpu_usage_reports_unavailable_without_details(tmp_path):
     with TestClient(app) as client:
         client.headers['X-Heretic-Session'] = client.get('/api/heretic/session').json()['token']
         assert client.get('/api/heretic/gpu').json() == {'available': False, 'gpus': []}
+
