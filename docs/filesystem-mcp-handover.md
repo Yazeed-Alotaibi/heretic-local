@@ -15,3 +15,10 @@ Validation: `uv run --project gateway --frozen pytest gateway/tests/test_gateway
 Completed: pinned manifest+lockfile, scoped runtime config, gateway read allowlist/private-context handling, Windows installer with backup/rollback, conditional startup checks, and docs/filesystem-mcp.md. Both agents finished their owned changes; root reviewed integration. No active writer locks remain after publication.
 
 Next: push reviewable branch/PR, then install on desktop when execution access is available. Follow docs/filesystem-mcp.md for install/rollback; preserve newer local source before replacement. Installer backs up runtime files and leaves personal files intact. Do not claim this is running on the PC. Prior document/memory merges are included when installer copies current gateway source.
+
+Publication checkpoint — supersedes pending publication above:
+- Source pushed and verified byte-for-byte in draft PR #6: https://github.com/Yazeed-Alotaibi/heretic-local/pull/6
+- Tested source commit: `f366f7467c07303bedeeab734198b9945229a9c2`; all nine published files match the reviewed local files. Only this documentation checkpoint follows validation.
+- State: implemented, focused tests passed, pushed; NOT merged and NOT installed. Main remains `c8c6889fa7efba65d7764d21371452821ab04510` at publication.
+- Next: merge the reviewable PR, then run the installer on the desktop once remote execution access is restored (or locally on the PC). No live access or Node version on the PC has been verified.
+- Agent tasks are complete; no active resource locks. Root owns handoff. Local fetched README/web-tools/other launcher snapshots were reference material and are not included in this PR.
