@@ -54,3 +54,23 @@ new tool schema. Verify health, import a disposable long text, search a phrase n
 its end, read the returned chunk, and confirm a project-private document is isolated.
 Rollback: stop owned services, restore the two backed-up Python files, and reopen.
 Schema-v1 documents and original files need no rollback or migration.
+
+
+## Latest checkpoint — 2026-10-30 (supersedes delivery state above)
+
+User explicitly authorized merging and installing. PR #4 was merged and independently
+verified as merged; merge commit e663bc3843d5c4d057e6cad999c791d4fda91b55.
+The unchanged gateway source passed the full suite again: 77 passed, 1 Windows-only
+skip, 1 existing deprecation warning. Source and deployment scope remain as above.
+
+Installation has NOT occurred. Desktop Commander lists only Y-Lap, offline; the
+intended desktop is absent. A fresh request from this session to
+http://desktop-7ov7vat:8080/api/heretic/health returned HTTP 503 upstream connection
+termination. User's phone access through Tailscale does not establish agent shell
+or file access. No runtime files or services were changed.
+
+Next action: connect the desktop to Remote Desktop Commander (or provide a working
+authorized remote execution connection), inspect installed files for newer changes,
+then perform the two-file backed-up installation and verify live health and long-doc
+search/read. Existing user authorization covers that installation; no repeat approval
+is needed. If access remains unavailable, use the manual deployment instructions above.
